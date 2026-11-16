@@ -1,3 +1,5 @@
+import { formatCellText } from '../core/format.js';
+import { DEFAULT_STYLE, normalizeStyle } from '../core/style.js';
 import { columnIndexToLabel } from '../core/coordinates.js';
 
 /** 默认网格主题。 */
@@ -16,6 +18,8 @@ export const DEFAULT_GRID_THEME = Object.freeze({
   selectionBorder: '#2563eb',
   selectionGridLine: '#b9cbe6',
   cellText: '#1f2329',
+  cellBorder: '#1f2329',
+  cellFontSize: 13,
   font: '12px "Segoe UI", "PingFang SC", sans-serif',
   cellFont: '13px "Segoe UI", "PingFang SC", sans-serif',
 });
@@ -45,13 +49,25 @@ export function createGridRenderer({ theme = {} } = {}) {
    * @param {{ row: number, col: number } | null} params.activeCell 活动单元格
    * @param {{ startRow: number, startCol: number, endRow: number, endCol: number } | null} [params.selection] 选区范围
    * @param {(row: number, col: number) => object | undefined} [params.getCell] 单元格读取函数
+   * @param {(row: number, col: number) => object | undefined} [params.getStyle] 样式读取函数
    * @param {number} params.width 画布 CSS 宽度
    * @param {number} params.height 画布 CSS 高度
    * @returns {{ rows: number, columns: number, labels: number, texts: number }} 绘制统计
    */
   function draw(
     ctx,
-    { layout, viewport, scrollLeft, scrollTop, activeCell, selection, getCell, width, height },
+    {
+      layout,
+      viewport,
+      scrollLeft,
+      scrollTop,
+      activeCell,
+      selection,
+      getCell,
+      getStyle,
+      width,
+      height,
+    },
   ) {
     const stats = { rows: 0, columns: 0, labels: 0, texts: 0 };
     const bodyLeft = layout.headerWidth;
@@ -74,6 +90,7 @@ export function createGridRenderer({ theme = {} } = {}) {
       bodyTop,
       bodyWidth,
       bodyHeight,
+      getStyle,
       width,
       height,
       stats,
@@ -89,6 +106,7 @@ export function createGridRenderer({ theme = {} } = {}) {
         bodyWidth,
         bodyHeight,
         getCell,
+        getStyle,
         stats,
       });
     }
@@ -131,6 +149,7 @@ export function createGridRenderer({ theme = {} } = {}) {
       bodyTop,
       bodyWidth,
       bodyHeight,
+      getStyle,
       width,
       height,
       stats,
@@ -140,6 +159,21 @@ export function createGridRenderer({ theme = {} } = {}) {
     ctx.beginPath();
     ctx.rect(bodyLeft, bodyTop, bodyWidth, bodyHeight);
     ctx.clip();
+
+    if (getStyle) {
+      for (let row = viewport.firstRow; row <= viewport.lastRow; row += 1) {
+        for (let col = viewport.firstCol; col <= viewport.lastCol; col += 1) {
+          const background = getStyle(row, col)?.backgroundColor;
+          if (!background) {
+            continue;
+          }
+          const x = bodyLeft + layout.columnX(col) - scrollLeft;
+          const y = bodyTop + layout.rowY(row) - scrollTop;
+          ctx.fillStyle = background;
+          ctx.fillRect(x, y, layout.columnWidth, layout.rowHeight);
+        }
+      }
+    }
 
     if (selection) {
       const x = bodyLeft + layout.columnX(selection.startCol) - scrollLeft;
@@ -181,6 +215,41 @@ export function createGridRenderer({ theme = {} } = {}) {
       stats.columns += 1;
     }
     ctx.stroke();
+
+    if (getStyle) {
+      ctx.strokeStyle = currentTheme.cellBorder;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let row = viewport.firstRow; row <= viewport.lastRow; row += 1) {
+        for (let col = viewport.firstCol; col <= viewport.lastCol; col += 1) {
+          const borders = getStyle(row, col)?.borders;
+          if (!borders) {
+            continue;
+          }
+          const x = bodyLeft + layout.columnX(col) - scrollLeft;
+          const y = bodyTop + layout.rowY(row) - scrollTop;
+          const cellWidth = layout.columnWidth;
+          const cellHeight = layout.rowHeight;
+          if (borders.top) {
+            ctx.moveTo(x, y + 0.5);
+            ctx.lineTo(x + cellWidth, y + 0.5);
+          }
+          if (borders.bottom) {
+            ctx.moveTo(x, y + cellHeight - 0.5);
+            ctx.lineTo(x + cellWidth, y + cellHeight - 0.5);
+          }
+          if (borders.left) {
+            ctx.moveTo(x + 0.5, y);
+            ctx.lineTo(x + 0.5, y + cellHeight);
+          }
+          if (borders.right) {
+            ctx.moveTo(x + cellWidth - 0.5, y);
+            ctx.lineTo(x + cellWidth - 0.5, y + cellHeight);
+          }
+        }
+      }
+      ctx.stroke();
+    }
 
     if (selection) {
       const x = bodyLeft + layout.columnX(selection.startCol) - scrollLeft;
@@ -227,6 +296,7 @@ export function createGridRenderer({ theme = {} } = {}) {
       bodyWidth,
       bodyHeight,
       getCell,
+      getStyle,
       stats,
     } = params;
 
@@ -234,16 +304,14 @@ export function createGridRenderer({ theme = {} } = {}) {
     ctx.beginPath();
     ctx.rect(bodyLeft, bodyTop, bodyWidth, bodyHeight);
     ctx.clip();
-
-    ctx.font = currentTheme.cellFont;
-    ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
-    ctx.fillStyle = currentTheme.cellText;
 
     for (let row = viewport.firstRow; row <= viewport.lastRow; row += 1) {
       for (let col = viewport.firstCol; col <= viewport.lastCol; col += 1) {
-        const text = getCell(row, col)?.rawInput;
-        if (text === undefined || text === '') {
+        const cell = getCell(row, col);
+        const style = normalizeStyle(getStyle?.(row, col) ?? DEFAULT_STYLE);
+        const text = formatCellText(cell, style);
+        if (text === '') {
           continue;
         }
         const x = bodyLeft + layout.columnX(col) - scrollLeft;
@@ -252,7 +320,19 @@ export function createGridRenderer({ theme = {} } = {}) {
         ctx.beginPath();
         ctx.rect(x + 1, y + 1, layout.columnWidth - 2, layout.rowHeight - 2);
         ctx.clip();
-        ctx.fillText(text, x + 6, y + layout.rowHeight / 2);
+        ctx.font = `${style.italic ? 'italic ' : ''}${style.bold ? '700 ' : ''}${currentTheme.cellFontSize}px "Segoe UI", "PingFang SC", sans-serif`;
+        ctx.fillStyle = style.textColor;
+        const verticalCenter = y + layout.rowHeight / 2;
+        if (style.align === 'center') {
+          ctx.textAlign = 'center';
+          ctx.fillText(text, x + layout.columnWidth / 2, verticalCenter);
+        } else if (style.align === 'right') {
+          ctx.textAlign = 'right';
+          ctx.fillText(text, x + layout.columnWidth - 6, verticalCenter);
+        } else {
+          ctx.textAlign = 'left';
+          ctx.fillText(text, x + 6, verticalCenter);
+        }
         ctx.restore();
         stats.texts += 1;
       }

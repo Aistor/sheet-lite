@@ -49,9 +49,12 @@ import { createGridLayout } from '@/spreadsheet/layout/gridLayout.js';
 import { cellScreenRect } from '@/spreadsheet/layout/editorRect.js';
 import { createGridRenderer } from '@/spreadsheet/rendering/gridRenderer.js';
 import { SparseCellStore } from '@/spreadsheet/store/sparseCellStore.js';
+import { SparseStyleStore } from '@/spreadsheet/store/sparseStyleStore.js';
+import { DEFAULT_STYLE, normalizeStyle } from '@/spreadsheet/core/style.js';
 import { createCommandManager } from '@/spreadsheet/commands/commandManager.js';
 import { createSetCellCommand } from '@/spreadsheet/commands/setCellCommand.js';
 import { createSetCellsBatchCommand } from '@/spreadsheet/commands/setCellsBatchCommand.js';
+import { createSetRangeStyleCommand } from '@/spreadsheet/commands/setRangeStyleCommand.js';
 import { parseTsv, serializeRangeToTsv } from '@/spreadsheet/clipboard/tsv.js';
 import {
   autoScrollDelta,
@@ -68,7 +71,7 @@ const props = defineProps({
   columnCount: { type: Number, default: 16384 },
 });
 
-const emit = defineEmits(['active-change']);
+const emit = defineEmits(['active-change', 'active-style-change']);
 
 const layout = createGridLayout({
   rowCount: props.rowCount,
@@ -93,9 +96,17 @@ const editorStyle = ref({});
 const notice = ref('');
 
 const cellStore = new SparseCellStore();
-const commandContext = { store: cellStore };
-const commands = createCommandManager({ onApplied: () => scheduleDraw() });
+const styleStore = new SparseStyleStore();
+const commandContext = { store: cellStore, styleStore };
+const commands = createCommandManager({
+  onApplied: () => {
+    scheduleDraw();
+    emitActiveStyle();
+  },
+});
 const renderer = createGridRenderer();
+
+const MAX_STYLE_CELLS = 100_000;
 
 let editorText = '';
 let composing = false;
@@ -108,6 +119,7 @@ watch(
   activeCell,
   (cell) => {
     emit('active-change', toA1(cell.row, cell.col));
+    emitActiveStyle();
   },
   { immediate: true },
 );
@@ -187,6 +199,7 @@ function drawFrame() {
     activeCell: activeCell.value,
     selection: selectionRange(selection.value),
     getCell: (row, col) => cellStore.get(row, col),
+    getStyle: (row, col) => styleStore.get(row, col),
     width: state.width,
     height: state.height,
   });
@@ -565,6 +578,65 @@ function clearSelection() {
   }
   commands.execute(createSetCellsBatchCommand({ cells }), commandContext);
 }
+
+function emitActiveStyle() {
+  const cell = activeCell.value;
+  emit('active-style-change', normalizeStyle(styleStore.get(cell.row, cell.col) ?? DEFAULT_STYLE));
+}
+
+function selectionCellCount(range) {
+  return (range.endRow - range.startRow + 1) * (range.endCol - range.startCol + 1);
+}
+
+function applyStyle(patch) {
+  const range = selectionRange(selection.value);
+  if (selectionCellCount(range) > MAX_STYLE_CELLS) {
+    showNotice('选区过大，暂不支持一次性设置样式');
+    return;
+  }
+  commands.execute(
+    createSetRangeStyleCommand({ range, resolvePatch: () => patch }),
+    commandContext,
+  );
+  emitActiveStyle();
+}
+
+function applyBorder(mode) {
+  const range = selectionRange(selection.value);
+  if (selectionCellCount(range) > MAX_STYLE_CELLS) {
+    showNotice('选区过大，暂不支持一次性设置边框');
+    return;
+  }
+  commands.execute(
+    createSetRangeStyleCommand({
+      range,
+      resolvePatch: (row, col) => {
+        if (mode === 'none') {
+          return { borders: { top: false, right: false, bottom: false, left: false } };
+        }
+        if (mode === 'all') {
+          return { borders: { top: true, right: true, bottom: true, left: true } };
+        }
+        return {
+          borders: {
+            top: row === range.startRow,
+            bottom: row === range.endRow,
+            left: col === range.startCol,
+            right: col === range.endCol,
+          },
+        };
+      },
+    }),
+    commandContext,
+  );
+  emitActiveStyle();
+}
+
+function applyNumberFormat(numberFormat) {
+  applyStyle({ numberFormat });
+}
+
+defineExpose({ applyStyle, applyBorder, applyNumberFormat });
 
 function undo() {
   if (commands.undo(commandContext)) {
