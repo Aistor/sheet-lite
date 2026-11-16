@@ -1,4 +1,4 @@
-package com.example.sheetlite.common.web;
+package com.sheetlite.common.web;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;

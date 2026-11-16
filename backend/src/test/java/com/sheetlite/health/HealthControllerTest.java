@@ -1,9 +1,9 @@
-package com.example.sheetlite.health;
+package com.sheetlite.health;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
-import com.example.sheetlite.common.response.ApiResponse;
+import com.sheetlite.common.response.ApiResponse;
 import org.junit.jupiter.api.Test;
 
 class HealthControllerTest {

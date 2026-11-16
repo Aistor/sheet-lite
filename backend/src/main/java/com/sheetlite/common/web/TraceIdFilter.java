@@ -1,4 +1,4 @@
-package com.example.sheetlite.common.web;
+package com.sheetlite.common.web;
 
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;

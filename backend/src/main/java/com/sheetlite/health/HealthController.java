@@ -1,6 +1,6 @@
-package com.example.sheetlite.health;
+package com.sheetlite.health;
 
-import com.example.sheetlite.common.response.ApiResponse;
+import com.sheetlite.common.response.ApiResponse;
 import java.time.OffsetDateTime;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.GetMapping;

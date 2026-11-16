@@ -113,7 +113,7 @@ GET /api/workbooks/100/worksheets/200/chunks?startRow=0&endRow=127&startCol=0&en
 
 不要把 SQL、堆栈、内部路径或未经脱敏的输入数据返回客户端。
 
-当前已实现的错误码以 `backend/src/main/java/com/example/sheetlite/common/response/ErrorCode.java` 为唯一来源：
+当前已实现的错误码以 `backend/src/main/java/com/sheetlite/common/response/ErrorCode.java` 为唯一来源：
 
 - 成功响应 `code` 固定为 `OK`。
 - 错误码：`VALIDATION_ERROR`、`RESOURCE_NOT_FOUND`、`METHOD_NOT_ALLOWED`、`WORKBOOK_NOT_FOUND`、`FORBIDDEN`、`REVISION_CONFLICT`、`RANGE_TOO_LARGE`、`UNSUPPORTED_OPERATION`、`INTERNAL_ERROR`。

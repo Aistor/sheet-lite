@@ -5,7 +5,7 @@
 建议先采用单体应用、按业务模块分包：
 
 ```text
-backend/src/main/java/com/example/sheetlite/
+backend/src/main/java/com/sheetlite/
 ├── SheetLiteApplication.java
 ├── common/
 │   ├── config/

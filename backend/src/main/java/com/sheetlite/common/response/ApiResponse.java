@@ -1,4 +1,4 @@
-package com.example.sheetlite.common.response;
+package com.sheetlite.common.response;
 
 import java.util.Objects;
 import org.slf4j.MDC;

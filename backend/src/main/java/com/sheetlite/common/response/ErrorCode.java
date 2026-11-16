@@ -1,4 +1,4 @@
-package com.example.sheetlite.common.response;
+package com.sheetlite.common.response;
 
 import org.springframework.http.HttpStatus;
 

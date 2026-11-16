@@ -1,4 +1,4 @@
-package com.example.sheetlite;
+package com.sheetlite;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;

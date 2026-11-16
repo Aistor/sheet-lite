@@ -1,4 +1,4 @@
-package com.example.sheetlite.common.response;
+package com.sheetlite.common.response;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;

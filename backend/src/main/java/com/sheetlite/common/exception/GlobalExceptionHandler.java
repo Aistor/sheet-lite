@@ -1,11 +1,10 @@
-package com.example.sheetlite.common.exception;
+package com.sheetlite.common.exception;
 
-import com.example.sheetlite.common.response.ApiResponse;
-import com.example.sheetlite.common.response.ApiResponse.FieldViolation;
-import com.example.sheetlite.common.response.ErrorCode;
+import com.sheetlite.common.response.ApiResponse;
+import com.sheetlite.common.response.ApiResponse.FieldViolation;
+import com.sheetlite.common.response.ErrorCode;
 import java.util.List;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
@@ -14,13 +13,13 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
+
 /**
  * 全局异常转换：业务异常映射到稳定错误码，未预期异常记录日志且不泄露堆栈。
  */
+@Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
-
-    private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
     /**
      * 处理业务异常。
@@ -30,7 +29,7 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<ApiResponse<Void>> handleBusinessException(BusinessException exception) {
-        ErrorCode errorCode = exception.errorCode();
+        ErrorCode errorCode = exception.getErrorCode();
         log.warn("business error code={} message={}", errorCode.code(), exception.getMessage());
         return ResponseEntity.status(errorCode.status())
                 .body(ApiResponse.error(errorCode, exception.getMessage()));

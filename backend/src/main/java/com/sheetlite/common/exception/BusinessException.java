@@ -1,11 +1,13 @@
-package com.example.sheetlite.common.exception;
+package com.sheetlite.common.exception;
 
-import com.example.sheetlite.common.response.ErrorCode;
+import com.sheetlite.common.response.ErrorCode;
 import java.util.Objects;
+import lombok.Getter;
 
 /**
  * 可预期的业务异常，由 {@link GlobalExceptionHandler} 转换为统一错误响应。
  */
+@Getter
 public class BusinessException extends RuntimeException {
 
     private final ErrorCode errorCode;
@@ -39,14 +41,5 @@ public class BusinessException extends RuntimeException {
     public BusinessException(ErrorCode errorCode, String message, Throwable cause) {
         super(message, cause);
         this.errorCode = Objects.requireNonNull(errorCode, "errorCode must not be null");
-    }
-
-    /**
-     * 业务错误码。
-     *
-     * @return 错误码
-     */
-    public ErrorCode errorCode() {
-        return errorCode;
     }
 }
