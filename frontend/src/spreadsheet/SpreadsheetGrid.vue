@@ -73,7 +73,7 @@ const scrollerRef = ref(null);
 const editorRef = ref(null);
 
 const selection = ref(createSelection({ row: 0, col: 0 }));
-const activeCell = computed(() => selection.value.focus);
+const activeCell = computed(() => selection.value.anchor);
 const editing = ref(null);
 const editorStyle = ref({});
 const notice = ref('');

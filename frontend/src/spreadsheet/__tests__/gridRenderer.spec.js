@@ -101,7 +101,7 @@ describe('gridRenderer', () => {
     expect(ctx.calls.save).toBe(ctx.calls.restore);
   });
 
-  it('绘制活动单元格高亮边框', () => {
+  it('活动单元格使用白底且不再单独描边', () => {
     const ctx = createFakeContext();
     createGridRenderer().draw(ctx, {
       layout,
@@ -113,7 +113,8 @@ describe('gridRenderer', () => {
       height: 624,
     });
 
-    expect(ctx.calls.strokeRect).toBe(1);
+    expect(ctx.calls.fillRect).toBeGreaterThan(1);
+    expect(ctx.calls.strokeRect).toBe(0);
   });
 
   it('没有活动单元格时不绘制高亮', () => {
@@ -164,7 +165,7 @@ describe('gridRenderer', () => {
 
     expect(stats.labels).toBeGreaterThan(0);
     expect(ctx.calls.fillRect).toBeGreaterThan(1);
-    expect(ctx.calls.strokeRect).toBe(2);
+    expect(ctx.calls.strokeRect).toBe(1);
   });
 
   it('绘制非空单元格文本并跳过空输入', () => {

@@ -10,9 +10,11 @@ export const DEFAULT_GRID_THEME = Object.freeze({
   headerActiveText: '#111827',
   headerActiveBackground: '#e8efff',
   activeFill: 'rgba(37, 99, 235, 0.10)',
+  activeCellBackground: '#ffffff',
   activeBorder: '#2563eb',
-  selectionFill: 'rgba(37, 99, 235, 0.12)',
+  selectionFill: 'rgba(37, 99, 235, 0.16)',
   selectionBorder: '#2563eb',
+  selectionGridLine: '#b9cbe6',
   cellText: '#1f2329',
   font: '12px "Segoe UI", "PingFang SC", sans-serif',
   cellFont: '13px "Segoe UI", "PingFang SC", sans-serif',
@@ -146,11 +148,13 @@ export function createGridRenderer({ theme = {} } = {}) {
       const selectionHeight = (selection.endRow - selection.startRow + 1) * layout.rowHeight;
       ctx.fillStyle = currentTheme.selectionFill;
       ctx.fillRect(x, y, selectionWidth, selectionHeight);
-    } else if (activeCell) {
+    }
+
+    if (activeCell) {
       const x = bodyLeft + layout.columnX(activeCell.col) - scrollLeft;
       const y = bodyTop + layout.rowY(activeCell.row) - scrollTop;
-      ctx.fillStyle = currentTheme.activeFill;
-      ctx.fillRect(x + 1, y + 1, layout.columnWidth - 1, layout.rowHeight - 1);
+      ctx.fillStyle = currentTheme.activeCellBackground;
+      ctx.fillRect(x, y, layout.columnWidth, layout.rowHeight);
     }
 
     ctx.strokeStyle = currentTheme.gridLine;
@@ -186,14 +190,27 @@ export function createGridRenderer({ theme = {} } = {}) {
       ctx.strokeStyle = currentTheme.selectionBorder;
       ctx.lineWidth = 2;
       ctx.strokeRect(x + 1, y + 1, selectionWidth - 2, selectionHeight - 2);
-    }
 
-    if (activeCell) {
-      const x = bodyLeft + layout.columnX(activeCell.col) - scrollLeft;
-      const y = bodyTop + layout.rowY(activeCell.row) - scrollTop;
-      ctx.strokeStyle = currentTheme.activeBorder;
-      ctx.lineWidth = 2;
-      ctx.strokeRect(x + 1, y + 1, layout.columnWidth - 2, layout.rowHeight - 2);
+      ctx.strokeStyle = currentTheme.selectionGridLine;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let row = selection.startRow + 1; row <= selection.endRow; row += 1) {
+        const lineY = bodyTop + layout.rowY(row) - scrollTop;
+        if (lineY < bodyTop || lineY > height) {
+          continue;
+        }
+        ctx.moveTo(Math.max(x, bodyLeft), lineY + 0.5);
+        ctx.lineTo(Math.min(x + selectionWidth, width), lineY + 0.5);
+      }
+      for (let col = selection.startCol + 1; col <= selection.endCol; col += 1) {
+        const lineX = bodyLeft + layout.columnX(col) - scrollLeft;
+        if (lineX < bodyLeft || lineX > width) {
+          continue;
+        }
+        ctx.moveTo(lineX + 0.5, Math.max(y, bodyTop));
+        ctx.lineTo(lineX + 0.5, Math.min(y + selectionHeight, height));
+      }
+      ctx.stroke();
     }
 
     ctx.restore();
