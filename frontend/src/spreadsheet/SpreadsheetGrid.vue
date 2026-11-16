@@ -15,12 +15,11 @@
     >
       <div class="grid-spacer" :style="spacerStyle"></div>
     </div>
-    <div class="grid-badge">{{ activeLabel }}</div>
   </div>
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { toA1 } from '@/spreadsheet/core/coordinates.js';
 import { moveActiveCell } from '@/spreadsheet/core/selection.js';
 import { createGridLayout } from '@/spreadsheet/layout/gridLayout.js';
@@ -36,6 +35,8 @@ const props = defineProps({
   columnCount: { type: Number, default: 16384 },
 });
 
+const emit = defineEmits(['active-change']);
+
 const layout = createGridLayout({
   rowCount: props.rowCount,
   columnCount: props.columnCount,
@@ -46,7 +47,14 @@ const canvasRef = ref(null);
 const scrollerRef = ref(null);
 
 const activeCell = ref({ row: 0, col: 0 });
-const activeLabel = computed(() => toA1(activeCell.value.row, activeCell.value.col));
+
+watch(
+  activeCell,
+  (cell) => {
+    emit('active-change', toA1(cell.row, cell.col));
+  },
+  { immediate: true },
+);
 
 const spacerStyle = computed(() => ({
   width: `${layout.totalWidth}px`,
@@ -233,7 +241,8 @@ onBeforeUnmount(() => {
 <style scoped>
 .grid-shell {
   position: relative;
-  height: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow: hidden;
   border: 1px solid #e5e7eb;
   border-radius: 8px;
@@ -260,19 +269,6 @@ onBeforeUnmount(() => {
 }
 
 .grid-spacer {
-  pointer-events: none;
-}
-
-.grid-badge {
-  position: absolute;
-  top: 4px;
-  right: 12px;
-  padding: 1px 8px;
-  border-radius: 999px;
-  background-color: rgba(37, 99, 235, 0.1);
-  color: #1d4ed8;
-  font-size: 12px;
-  line-height: 16px;
   pointer-events: none;
 }
 </style>

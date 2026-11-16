@@ -1,21 +1,25 @@
 <template>
   <n-config-provider :theme-overrides="themeOverrides">
-    <n-layout class="editor-shell">
-      <n-layout-header bordered class="editor-header">
-        <div class="brand">Sheet Lite</div>
+    <div class="editor-shell">
+      <header class="editor-header">
+        <span class="brand">Sheet Lite</span>
         <n-tag size="small" type="info" round>阶段 1 · 空白网格</n-tag>
+        <span class="address">{{ activeAddress }}</span>
         <span class="hint">点击单元格激活，方向键移动</span>
-      </n-layout-header>
-      <n-layout-content class="editor-content">
-        <SpreadsheetGrid />
-      </n-layout-content>
-    </n-layout>
+      </header>
+      <main class="editor-content">
+        <SpreadsheetGrid @active-change="activeAddress = $event" />
+      </main>
+    </div>
   </n-config-provider>
 </template>
 
 <script setup>
-import { NConfigProvider, NLayout, NLayoutContent, NLayoutHeader, NTag } from 'naive-ui';
+import { ref } from 'vue';
+import { NConfigProvider, NTag } from 'naive-ui';
 import SpreadsheetGrid from '@/spreadsheet/SpreadsheetGrid.vue';
+
+const activeAddress = ref('A1');
 
 const themeOverrides = {
   common: {
@@ -28,15 +32,18 @@ const themeOverrides = {
 <style scoped>
 .editor-shell {
   display: flex;
-  height: 100%;
+  height: 100vh;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .editor-header {
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
   gap: 12px;
   padding: 10px 16px;
+  border-bottom: 1px solid #e5e7eb;
   background-color: #ffffff;
 }
 
@@ -52,8 +59,20 @@ const themeOverrides = {
   font-size: 12px;
 }
 
+.address {
+  padding: 2px 10px;
+  border: 1px solid #dbe3ef;
+  border-radius: 4px;
+  background-color: #f7f9fc;
+  color: #1d4ed8;
+  font-family: 'Consolas', 'Menlo', monospace;
+  font-size: 12px;
+  line-height: 18px;
+}
+
 .editor-content {
-  flex: 1;
+  display: flex;
+  flex: 1 1 auto;
   min-height: 0;
   padding: 12px;
   background-color: #f5f6f8;
