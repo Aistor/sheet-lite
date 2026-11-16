@@ -38,6 +38,7 @@ backend/src/main/java/com/sheetlite/
 - **固定使用 JDK 21**，开发机、CI 和构建环境保持一致；禁止无说明地升级或降级 Java 基线。
 - 使用本机安装的 Maven **3.9.9**，并在 `pom.xml` 中将 Java release 固定为 `21`。项目不包含 Maven Wrapper 文件或配置目录。
 - Spring Boot BOM 管理 Spring 生态依赖版本；避免手工混搭不兼容版本。
+- 使用 Lombok 减少样板代码：日志统一用 `@Slf4j` 注入 SLF4J Logger，简单访问器可用 `@Getter`；注解只在编译期生效，不引入运行时代理。
 - MyBatis-Plus、数据库驱动、Springdoc、测试库等需做 Boot 4 兼容性验证。
 - 引入依赖前核对维护状态、许可证、安全公告和升级路径。
 
@@ -52,7 +53,7 @@ backend/src/main/java/com/sheetlite/
 1. 命名：类使用 UpperCamelCase，方法/变量使用 lowerCamelCase，常量使用全大写下划线。
 2. 分层：Controller、Application/Service、Mapper 职责清晰；禁止 Controller 直接访问 Mapper。
 3. 异常：禁止空 catch；异常必须有上下文；业务异常与系统异常区分。
-4. 日志：使用 SLF4J 参数化日志；禁止 `System.out.println`；避免记录密码、令牌和完整敏感单元格内容。
+4. 日志：使用 SLF4J 参数化日志，统一通过 Lombok `@Slf4j` 注入 Logger；禁止 `System.out.println`；避免记录密码、令牌和完整敏感单元格内容。
 5. 集合：明确集合容量、空值语义和不可变性；避免对外暴露可变内部集合。
 6. 日期时间：使用 `java.time`；统一时区策略，服务端存 UTC 或明确业务时区。
 7. 数值：金额和精确小数使用 `BigDecimal`，不要使用 `double` 作为财务值的权威表示。
