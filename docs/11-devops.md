@@ -8,7 +8,13 @@
 sheet-lite/
 ├── frontend/
 ├── backend/
+│   └── src/main/resources/
+│       ├── application.yml           # 通用配置，不含凭据
+│       ├── application-local.yml     # 本机数据源覆盖，被 .gitignore 忽略
+│       ├── application-local.example.yml  # 本地配置模板，不含凭据
+│       └── db/migration/V001__init_schema.sql
 ├── docs/
+├── .dsh/skills/                      # 仓库级 Skill
 ├── .editorconfig
 ├── .gitignore
 └── README.md
@@ -53,18 +59,18 @@ mvn spring-boot:run
 - `SPRING_DATASOURCE_URL`
 - `SPRING_DATASOURCE_USERNAME`
 - `SPRING_DATASOURCE_PASSWORD`
-- `APP_AUTH_*`
-- `APP_STORAGE_*`
-- `APP_LOG_LEVEL`
+- `APP_AUTH_*`（预留，当前代码未使用）
+- `APP_STORAGE_*`（预留，当前代码未使用）
+- `APP_LOG_LEVEL`（预留，当前代码未使用）
 
 不要把凭据提交到 Git；本地 `.env` 加入 `.gitignore`。
 
 ## 5. 配置分层
 
-- `application.yml`：安全的默认值。
-- `application-local.yml`：本地开发。
-- `application-test.yml`：测试。
-- `application-prod.yml`：未来部署模板（当前不使用），不含密钥。
+- `application.yml`：公共配置，不含凭据，也不含数据源连接参数。
+- `application-local.yml`：本机开发覆盖，包含本地数据源默认值；被 `.gitignore` 的 `*local.yml` 忽略，不提交。新环境以同目录的 `application-local.example.yml` 为模板创建。
+- `application-test.yml`：尚未创建，引入测试配置时再添加。
+- `application-prod.yml`：尚未创建；当前不做部署，未来模板不得包含密钥。
 
 如未来需要部署，再限制请求体大小、连接池、线程池、超时、CORS、日志等级和管理端点暴露范围。
 
@@ -120,7 +126,7 @@ mysqldump --single-transaction --no-tablespaces \
 ### 6.5 本地账号
 
 - 个人开发可用一个本机账号；不要用 root 运行应用。
-- 密码通过 0600 的客户端 option file 或凭据管理提供，不写入仓库/命令行/日志。
+- 本地默认账号可写入被忽略的 `application-local.yml`；更推荐通过环境变量或凭据管理提供，密码不写入仓库、命令行或日志。
 - 账号只授予 `sheet_lite` 所需权限；个人开发使用一个应用账号即可。
 
 ### 6.6 检查清单

@@ -15,7 +15,7 @@
 - [x] 后端骨架（Spring Boot 4 + JDK 21 + 统一响应/异常 + traceId + 健康检查）
 - [x] 根目录 `README.md`、`.gitignore`、`.editorconfig`
 - [x] MySQL `sheet_lite` 库按 `V001__init_schema.sql` 初始化，结构与基线一致（11 张 `sl_*` 表、无 `schema_version`、`utf8mb4_0900_ai_ci`、表/列注释齐全）
-- [ ] CI 门禁（取决于是否建立远端仓库）
+- [ ] CI 门禁（`origin` 远端已建立，尚未配置流水线）
 
 ## 目录结构
 
@@ -23,15 +23,19 @@
 sheet-lite/
 ├── frontend/                 # Vue 3 应用与表格内核
 │   ├── src/
-│   │   ├── app/              # 应用初始化
 │   │   ├── pages/            # 页面
-│   │   └── spreadsheet/      # 表格内核（core/store/viewport/layout/...）
+│   │   ├── spreadsheet/      # 表格内核（当前只有 core 的坐标/范围契约）
+│   │   └── styles.css
 │   └── tests/manual/         # 浏览器人工验收清单
-├── backend/                  # Spring Boot 服务
+├── backend/                  # Spring Boot 服务（本机 Maven，无 Wrapper）
 │   ├── src/main/java/com/example/sheetlite/
 │   └── src/main/resources/
-│       └── db/migration/     # V001__init_schema.sql（历史结构基线）
+│       ├── application.yml           # 通用配置，不含凭据
+│       ├── application-local.yml     # 本地数据源覆盖，已被 .gitignore 忽略
+│       ├── application-local.example.yml  # 本地配置模板
+│       └── db/migration/V001__init_schema.sql
 ├── docs/                     # 架构、模块契约、API 与阶段计划
+├── .dsh/skills/              # 仓库级 Skill（随仓库提交）
 ├── .editorconfig
 └── .gitignore
 ```
@@ -68,6 +72,8 @@ curl http://localhost:8080/api/health
 
 后端启动不强制要求数据库可达（连接池延迟初始化），但数据库相关功能需要正确凭据。
 
+`application.yml` 只保留公共配置，数据源默认值放在 `backend/src/main/resources/application-local.yml`。该文件被 `.gitignore` 的 `*local.yml` 忽略，新环境以同目录的 `application-local.example.yml` 为模板创建，或直接用环境变量提供连接参数。
+
 ### 数据库
 
 开发阶段数据库由 AI 助手接手管理，删除类操作需仓库所有者授权。
@@ -82,13 +88,13 @@ mysql --host=127.0.0.1 --port=3306 --user=<user> --database=sheet_lite \
 
 ## 配置与环境变量
 
-后端通过环境变量覆盖默认值，仓库内不保存任何凭据：
+数据源默认值放在未入库的 `application-local.yml`，环境变量可覆盖；仓库内不保存任何凭据：
 
-| 变量 | 默认值 | 说明 |
+| 变量 | 取值来源 | 说明 |
 |---|---|---|
-| `SPRING_DATASOURCE_URL` | `jdbc:mysql://localhost:3306/sheet_lite?...` | 数据库连接串 |
-| `SPRING_DATASOURCE_USERNAME` | `sheetlite` | 应用账号 |
-| `SPRING_DATASOURCE_PASSWORD` | 空 | 必填，禁止提交到 Git |
+| `SPRING_DATASOURCE_URL` | `application-local.yml`，可被环境变量覆盖 | 默认指向本机 `sheet_lite` |
+| `SPRING_DATASOURCE_USERNAME` | `application-local.yml`，可被环境变量覆盖 | 本地开发账号 |
+| `SPRING_DATASOURCE_PASSWORD` | `application-local.yml`，可被环境变量覆盖 | 禁止提交到 Git |
 | `SERVER_PORT` | `8080` | 服务端口 |
 | `SPRING_PROFILES_ACTIVE` | `local` | 默认本地开发配置 |
 
@@ -129,5 +135,5 @@ mysql --host=127.0.0.1 --port=3306 --user=<user> --database=sheet_lite \
 
 - 阶段 0 基线，`src/spreadsheet` 仅有坐标/范围纯函数，尚无渲染、选区、编辑、命令与持久化。
 - `backend/` 目前只有健康检查与统一错误结构，没有工作簿/单元格 API。
-- 数据库账号凭据保存在本机凭据文件，不进入仓库；应用默认延迟建立连接池，数据库不可达时服务仍可启动，问题会在首次真实 SQL 时暴露。
-- 未建立远端仓库，CI 尚未落地；当前质量门禁通过本地脚本（`yarn lint` / `yarn test` / `yarn build` / `mvn test`）执行。
+- 本地数据源默认值在 `backend/src/main/resources/application-local.yml`，该文件已被忽略；新环境需要自行创建或改用环境变量。应用默认延迟建立连接池，数据库不可达时服务仍可启动，问题会在首次真实 SQL 时暴露。
+- 已配置 `origin` 远端（`master` 跟踪 `origin/master`），但尚无 CI 工作流；当前质量门禁通过本地脚本（`yarn lint` / `yarn test` / `yarn build` / `mvn test`）执行。
