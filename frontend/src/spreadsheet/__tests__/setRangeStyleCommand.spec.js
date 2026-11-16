@@ -34,7 +34,7 @@ describe('SET_RANGE_STYLE 命令', () => {
 
     manager.undo(context);
     expect(styleStore.get(0, 0).bold).toBe(true);
-    expect(styleStore.get(0, 0).backgroundColor).toBe(null);
+    expect(styleStore.get(0, 0).backgroundColor).toBeUndefined();
     expect(styleStore.get(1, 1)).toBeUndefined();
   });
 

@@ -16,6 +16,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@vicons/material": "0.13.0",
     "naive-ui": "^2.45.3",
     "vue": "^3.5.45"
   },

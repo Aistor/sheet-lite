@@ -350,6 +350,11 @@
   resolved "https://registry.npmmirror.com/@types/lodash/-/lodash-4.17.27.tgz#15fb73275b64dbfe49e2ae8376bb469b352a47a7"
   integrity sha512-VenMRv/eKNrspX9v3H4dbmjsrnCOYdYBG3kxXKk3dG6X+urBGcj2Prww3xw1U5K4FV/mE4h5GbWd0szEKf+9ew==
 
+"@vicons/material@0.13.0":
+  version "0.13.0"
+  resolved "https://registry.npmmirror.com/@vicons/material/-/material-0.13.0.tgz#43dbde2c0f7b157a2fd22911d7decaa6d560daa8"
+  integrity sha512-lKVxFNprM+CaBkUH3gt6VjIeiMsKQl2zARQMwTCZruQl2vRHzyeZiKeCflWS99CEfv2JzX/6y697smxlzyxcVw==
+
 "@vitejs/plugin-vue@^6.0.11":
   version "6.0.11"
   resolved "https://registry.npmmirror.com/@vitejs/plugin-vue/-/plugin-vue-6.0.11.tgz#a4003b3e34f9a3d6808143778545b6c1fc1b69eb"

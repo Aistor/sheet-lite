@@ -113,6 +113,7 @@ export function createGridRenderer({ theme = {} } = {}) {
       layout,
       viewport,
       activeCell,
+      selection,
       bodyLeft,
       bodyTop,
       bodyWidth,
@@ -125,6 +126,7 @@ export function createGridRenderer({ theme = {} } = {}) {
       layout,
       viewport,
       activeCell,
+      selection,
       bodyLeft,
       bodyTop,
       bodyHeight,
@@ -183,13 +185,35 @@ export function createGridRenderer({ theme = {} } = {}) {
       }
     }
 
-    if (selection) {
-      const x = cellX(selection.startCol);
-      const y = cellY(selection.startRow);
-      const selectionWidth = cellX(selection.endCol + 1) - x;
-      const selectionHeight = cellY(selection.endRow + 1) - y;
+    const selectionRect = selection
+      ? (() => {
+          if (selection.mode === 'rows') {
+            const x = bodyLeft;
+            const y = cellY(selection.startRow);
+            return { x, y, w: width - bodyLeft, h: cellY(selection.endRow + 1) - y };
+          }
+          if (selection.mode === 'columns') {
+            const x = cellX(selection.startCol);
+            const y = bodyTop;
+            return { x, y, w: cellX(selection.endCol + 1) - x, h: height - bodyTop };
+          }
+          if (selection.mode === 'all') {
+            return { x: bodyLeft, y: bodyTop, w: bodyWidth, h: bodyHeight };
+          }
+          const x = cellX(selection.startCol);
+          const y = cellY(selection.startRow);
+          return {
+            x,
+            y,
+            w: cellX(selection.endCol + 1) - x,
+            h: cellY(selection.endRow + 1) - y,
+          };
+        })()
+      : null;
+
+    if (selectionRect) {
       ctx.fillStyle = currentTheme.selectionFill;
-      ctx.fillRect(x, y, selectionWidth, selectionHeight);
+      ctx.fillRect(selectionRect.x, selectionRect.y, selectionRect.w, selectionRect.h);
     }
 
     if (activeCell) {
@@ -275,41 +299,44 @@ export function createGridRenderer({ theme = {} } = {}) {
       ctx.stroke();
     }
 
-    if (selection) {
-      const x = cellX(selection.startCol);
-      const y = cellY(selection.startRow);
-      const selectionWidth = cellX(selection.endCol + 1) - x;
-      const selectionHeight = cellY(selection.endRow + 1) - y;
+    if (selectionRect) {
+      const { x, y, w: selectionWidth, h: selectionHeight } = selectionRect;
       ctx.strokeStyle = currentTheme.selectionBorder;
       ctx.lineWidth = 2;
       ctx.strokeRect(x + 1, y + 1, selectionWidth - 2, selectionHeight - 2);
 
-      ctx.strokeStyle = currentTheme.selectionGridLine;
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      for (let row = selection.startRow + 1; row <= selection.endRow; row += 1) {
-        if (cellHeight(row) === 0) {
-          continue;
+      if (selection.mode === 'cells' || selection.mode === 'rows' || selection.mode === 'columns') {
+        ctx.strokeStyle = currentTheme.selectionGridLine;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        if (selection.mode !== 'columns') {
+          for (let row = selection.startRow + 1; row <= selection.endRow; row += 1) {
+            if (cellHeight(row) === 0) {
+              continue;
+            }
+            const lineY = cellY(row);
+            if (lineY < bodyTop || lineY > height) {
+              continue;
+            }
+            ctx.moveTo(Math.max(x, bodyLeft), lineY + 0.5);
+            ctx.lineTo(Math.min(x + selectionWidth, width), lineY + 0.5);
+          }
         }
-        const lineY = cellY(row);
-        if (lineY < bodyTop || lineY > height) {
-          continue;
+        if (selection.mode !== 'rows') {
+          for (let col = selection.startCol + 1; col <= selection.endCol; col += 1) {
+            if (cellWidth(col) === 0) {
+              continue;
+            }
+            const lineX = cellX(col);
+            if (lineX < bodyLeft || lineX > width) {
+              continue;
+            }
+            ctx.moveTo(lineX + 0.5, Math.max(y, bodyTop));
+            ctx.lineTo(lineX + 0.5, Math.min(y + selectionHeight, height));
+          }
         }
-        ctx.moveTo(Math.max(x, bodyLeft), lineY + 0.5);
-        ctx.lineTo(Math.min(x + selectionWidth, width), lineY + 0.5);
+        ctx.stroke();
       }
-      for (let col = selection.startCol + 1; col <= selection.endCol; col += 1) {
-        if (cellWidth(col) === 0) {
-          continue;
-        }
-        const lineX = cellX(col);
-        if (lineX < bodyLeft || lineX > width) {
-          continue;
-        }
-        ctx.moveTo(lineX + 0.5, Math.max(y, bodyTop));
-        ctx.lineTo(lineX + 0.5, Math.min(y + selectionHeight, height));
-      }
-      ctx.stroke();
     }
 
     ctx.restore();
@@ -382,8 +409,10 @@ export function createGridRenderer({ theme = {} } = {}) {
 
   function drawColumnHeader(ctx, params) {
     const {
+      layout,
       viewport,
       activeCell,
+      selection,
       bodyLeft,
       bodyTop,
       bodyWidth,
@@ -392,6 +421,17 @@ export function createGridRenderer({ theme = {} } = {}) {
       cellWidth,
       stats,
     } = params;
+
+    const selectedColumns = selection
+      ? selection.mode === 'columns'
+        ? {
+            start: Math.min(selection.anchorCol, selection.focusCol),
+            end: Math.max(selection.anchorCol, selection.focusCol),
+          }
+        : selection.mode === 'all'
+          ? { start: 0, end: layout.columnCount - 1 }
+          : null
+      : null;
 
     ctx.save();
     ctx.beginPath();
@@ -415,7 +455,9 @@ export function createGridRenderer({ theme = {} } = {}) {
         continue;
       }
       const isActive = activeCell !== null && activeCell.col === col;
-      if (isActive) {
+      const isSelected =
+        selectedColumns !== null && col >= selectedColumns.start && col <= selectedColumns.end;
+      if (isActive || isSelected) {
         ctx.fillStyle = currentTheme.headerActiveBackground;
         ctx.fillRect(x, 0, colWidth, bodyTop);
       }
@@ -426,7 +468,7 @@ export function createGridRenderer({ theme = {} } = {}) {
       ctx.lineTo(x + colWidth - 0.5, bodyTop);
       ctx.stroke();
 
-      ctx.fillStyle = isActive ? currentTheme.headerActiveText : currentTheme.headerText;
+      ctx.fillStyle = isActive || isSelected ? currentTheme.headerActiveText : currentTheme.headerText;
       ctx.fillText(columnIndexToLabel(col), x + colWidth / 2, bodyTop / 2);
       stats.labels += 1;
     }
@@ -441,8 +483,10 @@ export function createGridRenderer({ theme = {} } = {}) {
 
   function drawRowHeader(ctx, params) {
     const {
+      layout,
       viewport,
       activeCell,
+      selection,
       bodyLeft,
       bodyTop,
       bodyHeight,
@@ -451,6 +495,17 @@ export function createGridRenderer({ theme = {} } = {}) {
       cellHeight,
       stats,
     } = params;
+
+    const selectedRows = selection
+      ? selection.mode === 'rows'
+        ? {
+            start: Math.min(selection.anchorRow, selection.focusRow),
+            end: Math.max(selection.anchorRow, selection.focusRow),
+          }
+        : selection.mode === 'all'
+          ? { start: 0, end: layout.rowCount - 1 }
+          : null
+      : null;
 
     ctx.save();
     ctx.beginPath();
@@ -474,7 +529,9 @@ export function createGridRenderer({ theme = {} } = {}) {
         continue;
       }
       const isActive = activeCell !== null && activeCell.row === row;
-      if (isActive) {
+      const isSelected =
+        selectedRows !== null && row >= selectedRows.start && row <= selectedRows.end;
+      if (isActive || isSelected) {
         ctx.fillStyle = currentTheme.headerActiveBackground;
         ctx.fillRect(0, y, bodyLeft, rowHeight);
       }
@@ -485,7 +542,7 @@ export function createGridRenderer({ theme = {} } = {}) {
       ctx.lineTo(bodyLeft, y + rowHeight - 0.5);
       ctx.stroke();
 
-      ctx.fillStyle = isActive ? currentTheme.headerActiveText : currentTheme.headerText;
+      ctx.fillStyle = isActive || isSelected ? currentTheme.headerActiveText : currentTheme.headerText;
       ctx.fillText(String(row + 1), bodyLeft - 8, y + rowHeight / 2);
       stats.labels += 1;
     }

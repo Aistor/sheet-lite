@@ -39,11 +39,17 @@
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { toA1 } from '@/spreadsheet/core/coordinates.js';
+import { columnIndexToLabel, toA1 } from '@/spreadsheet/core/coordinates.js';
 import {
+  createAllSelection,
+  createColumnSelection,
+  createRowSelection,
   createSelection,
+  extendColumnSelection,
+  extendRowSelection,
   extendSelection,
   moveActiveCell,
+  selectionActiveCell,
   selectionRange,
 } from '@/spreadsheet/core/selection.js';
 import { createGridLayout } from '@/spreadsheet/layout/gridLayout.js';
@@ -51,12 +57,13 @@ import { cellScreenRect } from '@/spreadsheet/layout/editorRect.js';
 import { createGridRenderer } from '@/spreadsheet/rendering/gridRenderer.js';
 import { SparseCellStore } from '@/spreadsheet/store/sparseCellStore.js';
 import { SparseStyleStore } from '@/spreadsheet/store/sparseStyleStore.js';
-import { DEFAULT_STYLE, normalizeStyle } from '@/spreadsheet/core/style.js';
 import { createCommandManager } from '@/spreadsheet/commands/commandManager.js';
 import { createSetCellCommand } from '@/spreadsheet/commands/setCellCommand.js';
 import { createSetCellsBatchCommand } from '@/spreadsheet/commands/setCellsBatchCommand.js';
 import { createSetRangeStyleCommand } from '@/spreadsheet/commands/setRangeStyleCommand.js';
-import { parseTsv, serializeRangeToTsv } from '@/spreadsheet/clipboard/tsv.js';
+import { createSetCellsStyleCommand } from '@/spreadsheet/commands/setCellsStyleCommand.js';
+import { createSetAreaStyleCommand } from '@/spreadsheet/commands/setAreaStyleCommand.js';
+import { MAX_PASTE_CELLS, parseTsv, serializeRangeToTsv } from '@/spreadsheet/clipboard/tsv.js';
 import {
   autoScrollDelta,
   clampScroll,
@@ -91,7 +98,7 @@ const scrollerRef = ref(null);
 const editorRef = ref(null);
 
 const selection = ref(createSelection({ row: 0, col: 0 }));
-const activeCell = computed(() => selection.value.anchor);
+const activeCell = computed(() => selectionActiveCell(selection.value));
 const editing = ref(null);
 const editorStyle = ref({});
 const notice = ref('');
@@ -113,15 +120,34 @@ const layoutVersion = ref(0);
 let editorText = '';
 let composing = false;
 let dragging = false;
+let headerDrag = null;
 let resizeState = null;
 let dragPointer = null;
 let dragFrame = 0;
 let noticeTimer = 0;
 
+function selectionLabel() {
+  const current = selection.value;
+  if (current.mode === 'rows') {
+    const start = Math.min(current.anchorRow, current.focusRow) + 1;
+    const end = Math.max(current.anchorRow, current.focusRow) + 1;
+    return `${start}:${end}`;
+  }
+  if (current.mode === 'columns') {
+    const start = columnIndexToLabel(Math.min(current.anchorCol, current.focusCol));
+    const end = columnIndexToLabel(Math.max(current.anchorCol, current.focusCol));
+    return `${start}:${end}`;
+  }
+  if (current.mode === 'all') {
+    return '全部';
+  }
+  return toA1(activeCell.value.row, activeCell.value.col);
+}
+
 watch(
-  activeCell,
-  (cell) => {
-    emit('active-change', toA1(cell.row, cell.col));
+  selection,
+  () => {
+    emit('active-change', selectionLabel());
     emitActiveStyle();
   },
   { immediate: true },
@@ -203,9 +229,12 @@ function drawFrame() {
     scrollLeft: state.scrollLeft,
     scrollTop: state.scrollTop,
     activeCell: activeCell.value,
-    selection: selectionRange(selection.value),
+    selection: {
+      mode: selection.value.mode,
+      ...selectionRange(selection.value, layout),
+    },
     getCell: (row, col) => cellStore.get(row, col),
-    getStyle: (row, col) => styleStore.get(row, col),
+    getStyle: (row, col) => styleStore.resolve(row, col),
     width: state.width,
     height: state.height,
   });
@@ -288,6 +317,53 @@ function handlePointerDown(event) {
     startResize(resizeTarget);
     return;
   }
+
+  const scrollerRect = scroller.getBoundingClientRect();
+  const localX = event.clientX - scrollerRect.left;
+  const localY = event.clientY - scrollerRect.top;
+
+  if (localX < layout.headerWidth && localY < layout.headerHeight) {
+    selection.value = createAllSelection();
+    headerDrag = null;
+    scheduleDraw();
+    return;
+  }
+
+  if (localY < layout.headerHeight && localX >= layout.headerWidth) {
+    const col = columnIndexAtPointer(event.clientX);
+    if (col < 0) {
+      return;
+    }
+    selection.value = event.shiftKey
+      ? extendColumnSelection(selection.value, col)
+      : createColumnSelection(col);
+    headerDrag = 'columns';
+    dragging = true;
+    dragPointer = { x: event.clientX, y: event.clientY };
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp, { once: true });
+    scheduleDraw();
+    return;
+  }
+
+  if (localX < layout.headerWidth && localY >= layout.headerHeight) {
+    const row = rowIndexAtPointer(event.clientY);
+    if (row < 0) {
+      return;
+    }
+    selection.value = event.shiftKey
+      ? extendRowSelection(selection.value, row)
+      : createRowSelection(row);
+    headerDrag = 'rows';
+    dragging = true;
+    dragPointer = { x: event.clientX, y: event.clientY };
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp, { once: true });
+    scheduleDraw();
+    return;
+  }
+
+  headerDrag = null;
   const cell = cellAt(event.clientX, event.clientY);
   if (!cell) {
     return;
@@ -320,8 +396,50 @@ function cellAtClamped(clientX, clientY) {
   return layout.hitTest(contentX, contentY);
 }
 
+function columnIndexAtPointer(clientX) {
+  const scroller = scrollerRef.value;
+  if (!scroller) {
+    return -1;
+  }
+  const rect = scroller.getBoundingClientRect();
+  const contentX = Math.min(
+    Math.max(0, clientX - rect.left - layout.headerWidth + state.scrollLeft),
+    layout.totalWidth - 1,
+  );
+  return layout.columnAt(contentX);
+}
+
+function rowIndexAtPointer(clientY) {
+  const scroller = scrollerRef.value;
+  if (!scroller) {
+    return -1;
+  }
+  const rect = scroller.getBoundingClientRect();
+  const contentY = Math.min(
+    Math.max(0, clientY - rect.top - layout.headerHeight + state.scrollTop),
+    layout.totalHeight - 1,
+  );
+  return layout.rowAt(contentY);
+}
+
 function extendSelectionToPointer() {
   if (!dragPointer) {
+    return;
+  }
+  if (headerDrag === 'columns') {
+    const col = columnIndexAtPointer(dragPointer.x);
+    if (col >= 0) {
+      selection.value = extendColumnSelection(selection.value, col);
+      scheduleDraw();
+    }
+    return;
+  }
+  if (headerDrag === 'rows') {
+    const row = rowIndexAtPointer(dragPointer.y);
+    if (row >= 0) {
+      selection.value = extendRowSelection(selection.value, row);
+      scheduleDraw();
+    }
     return;
   }
   const cell = cellAtClamped(dragPointer.x, dragPointer.y);
@@ -380,6 +498,7 @@ function handlePointerMove(event) {
 
 function handlePointerUp() {
   dragging = false;
+  headerDrag = null;
   dragPointer = null;
   if (dragFrame !== 0) {
     window.cancelAnimationFrame(dragFrame);
@@ -481,7 +600,7 @@ function afterLayoutChange() {
 }
 
 function hideSelectedRows() {
-  const range = selectionRange(selection.value);
+  const range = selectionRange(selection.value, layout);
   const count = range.endRow - range.startRow + 1;
   if (count > 2000) {
     showNotice('选区行数过多，暂不支持批量隐藏');
@@ -494,7 +613,7 @@ function hideSelectedRows() {
 }
 
 function hideSelectedColumns() {
-  const range = selectionRange(selection.value);
+  const range = selectionRange(selection.value, layout);
   const count = range.endCol - range.startCol + 1;
   if (count > 200) {
     showNotice('选区列数过多，暂不支持批量隐藏');
@@ -507,7 +626,7 @@ function hideSelectedColumns() {
 }
 
 function showSelectedRows() {
-  const range = selectionRange(selection.value);
+  const range = selectionRange(selection.value, layout);
   for (let row = range.startRow; row <= range.endRow; row += 1) {
     layout.resetRowHeight(row);
   }
@@ -515,7 +634,7 @@ function showSelectedRows() {
 }
 
 function showSelectedColumns() {
-  const range = selectionRange(selection.value);
+  const range = selectionRange(selection.value, layout);
   for (let col = range.startCol; col <= range.endCol; col += 1) {
     layout.resetColumnWidth(col);
   }
@@ -656,13 +775,17 @@ function moveActive(deltaRow, deltaCol, extend = false) {
 }
 
 function copySelection() {
-  const range = selectionRange(selection.value);
+  const range = selectionRange(selection.value, layout);
+  const rows = range.endRow - range.startRow + 1;
+  const columns = range.endCol - range.startCol + 1;
+  if (rows * columns > MAX_PASTE_CELLS) {
+    showNotice('选区过大，暂不支持一次性复制');
+    return;
+  }
   const text = serializeRangeToTsv({
     range,
     getCell: (row, col) => cellStore.get(row, col),
   });
-  const rows = range.endRow - range.startRow + 1;
-  const columns = range.endCol - range.startCol + 1;
   navigator.clipboard
     .writeText(text)
     .then(() => showNotice(`已复制 ${rows} 行 × ${columns} 列`))
@@ -713,7 +836,7 @@ function handlePaste(event) {
 }
 
 function clearSelection() {
-  const range = selectionRange(selection.value);
+  const range = selectionRange(selection.value, layout);
   const cells = [];
   for (const { row, col } of cellStore.entriesInRange(range)) {
     cells.push({ row, col, input: '' });
@@ -726,7 +849,7 @@ function clearSelection() {
 
 function emitActiveStyle() {
   const cell = activeCell.value;
-  emit('active-style-change', normalizeStyle(styleStore.get(cell.row, cell.col) ?? DEFAULT_STYLE));
+  emit('active-style-change', styleStore.resolve(cell.row, cell.col));
 }
 
 function selectionCellCount(range) {
@@ -734,44 +857,85 @@ function selectionCellCount(range) {
 }
 
 function applyStyle(patch) {
-  const range = selectionRange(selection.value);
-  if (selectionCellCount(range) > MAX_STYLE_CELLS) {
+  const mode = selection.value.mode;
+  const range = selectionRange(selection.value, layout);
+
+  if (mode === 'cells') {
+    if (selectionCellCount(range) > MAX_STYLE_CELLS) {
+      showNotice('选区过大，暂不支持一次性设置样式');
+      return;
+    }
+    commands.execute(
+      createSetRangeStyleCommand({ range, resolvePatch: () => patch }),
+      commandContext,
+    );
+    emitActiveStyle();
+    return;
+  }
+
+  const isRows = mode === 'rows';
+  const start = mode === 'all' ? 0 : isRows ? range.startRow : range.startCol;
+  const end = mode === 'all' ? 0 : isRows ? range.endRow : range.endCol;
+  const count = mode === 'all' ? 1 : end - start + 1;
+  if (count > 1000) {
     showNotice('选区过大，暂不支持一次性设置样式');
     return;
   }
   commands.execute(
-    createSetRangeStyleCommand({ range, resolvePatch: () => patch }),
+    createSetAreaStyleCommand({
+      mode: mode === 'all' ? 'sheet' : isRows ? 'rows' : 'columns',
+      start,
+      end,
+      resolvePatch: () => patch,
+    }),
     commandContext,
   );
   emitActiveStyle();
 }
 
 function applyBorder(mode) {
-  const range = selectionRange(selection.value);
+  const range = selectionRange(selection.value, layout);
+  const borderPatch = (row, col) => {
+    if (mode === 'none') {
+      return { borders: { top: false, right: false, bottom: false, left: false } };
+    }
+    if (mode === 'all') {
+      return { borders: { top: true, right: true, bottom: true, left: true } };
+    }
+    return {
+      borders: {
+        top: row === range.startRow,
+        bottom: row === range.endRow,
+        left: col === range.startCol,
+        right: col === range.endCol,
+      },
+    };
+  };
+
+  if (selection.value.mode !== 'cells') {
+    const cells = [...cellStore.entriesInRange(range)].map(({ row, col }) => ({ row, col }));
+    if (cells.length === 0) {
+      showNotice('选区内暂无可设置边框的单元格');
+      return;
+    }
+    if (cells.length > MAX_STYLE_CELLS) {
+      showNotice('选区过大，暂不支持一次性设置边框');
+      return;
+    }
+    commands.execute(
+      createSetCellsStyleCommand({ cells, resolvePatch: borderPatch }),
+      commandContext,
+    );
+    emitActiveStyle();
+    return;
+  }
+
   if (selectionCellCount(range) > MAX_STYLE_CELLS) {
     showNotice('选区过大，暂不支持一次性设置边框');
     return;
   }
   commands.execute(
-    createSetRangeStyleCommand({
-      range,
-      resolvePatch: (row, col) => {
-        if (mode === 'none') {
-          return { borders: { top: false, right: false, bottom: false, left: false } };
-        }
-        if (mode === 'all') {
-          return { borders: { top: true, right: true, bottom: true, left: true } };
-        }
-        return {
-          borders: {
-            top: row === range.startRow,
-            bottom: row === range.endRow,
-            left: col === range.startCol,
-            right: col === range.endCol,
-          },
-        };
-      },
-    }),
+    createSetRangeStyleCommand({ range, resolvePatch: borderPatch }),
     commandContext,
   );
   emitActiveStyle();

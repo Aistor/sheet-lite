@@ -1,4 +1,4 @@
-import { DEFAULT_STYLE, isDefaultStyle, mergeStyle } from '../core/style.js';
+import { isDefaultStyle, mergePatch } from '../core/style.js';
 
 /**
  * 给区域内单元格批量设置样式。
@@ -30,7 +30,7 @@ export function createSetRangeStyleCommand({ range, resolvePatch }) {
         for (let col = range.startCol; col <= range.endCol; col += 1) {
           const before = styleStore.get(row, col);
           previous.push({ row, col, style: before });
-          const merged = mergeStyle(before ?? DEFAULT_STYLE, resolvePatch(row, col));
+          const merged = mergePatch(before ?? {}, resolvePatch(row, col));
           if (isDefaultStyle(merged)) {
             styleStore.delete(row, col);
           } else {

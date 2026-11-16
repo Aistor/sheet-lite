@@ -57,6 +57,25 @@ export function mergeStyle(base, patch) {
 }
 
 /**
+ * 合并两个样式补丁，保留“未设置”的字段。
+ *
+ * 与 {@link mergeStyle} 不同，这里不补默认值，适合存储分层样式补丁。
+ *
+ * @param {object} base 基础补丁
+ * @param {object} patch 新补丁
+ * @returns {object} 合并补丁
+ */
+export function mergePatch(base, patch) {
+  const left = base ?? {};
+  const right = patch ?? {};
+  return {
+    ...left,
+    ...right,
+    borders: { ...(left.borders ?? {}), ...(right.borders ?? {}) },
+  };
+}
+
+/**
  * 判断两个样式是否完全一致。
  *
  * @param {object} a 样式 A

@@ -1,10 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import {
   clampCell,
+  createAllSelection,
+  createColumnSelection,
+  createRowSelection,
   createSelection,
+  extendColumnSelection,
+  extendRowSelection,
   extendSelection,
   isSingleCellSelection,
   moveActiveCell,
+  selectionActiveCell,
   selectionRange,
 } from '../core/selection.js';
 
@@ -39,6 +45,7 @@ describe('moveActiveCell', () => {
 describe('区域选择', () => {
   it('创建单格选区', () => {
     expect(createSelection({ row: 2, col: 3 })).toEqual({
+      mode: 'cells',
       anchor: { row: 2, col: 3 },
       focus: { row: 2, col: 3 },
     });
@@ -69,5 +76,52 @@ describe('区域选择', () => {
         focus: { row: 0, col: 1 },
       }),
     ).toBe(false);
+  });
+});
+
+describe('整行/整列/全表选区', () => {
+  it('整行选择与范围', () => {
+    const selection = createRowSelection(2);
+    expect(selection).toEqual({ mode: 'rows', anchorRow: 2, focusRow: 2 });
+
+    const extended = extendRowSelection(selection, 5);
+    expect(extended).toEqual({ mode: 'rows', anchorRow: 2, focusRow: 5 });
+    expect(selectionRange(extended, bounds)).toEqual({
+      startRow: 2,
+      startCol: 0,
+      endRow: 5,
+      endCol: 99,
+    });
+    expect(selectionActiveCell(extended)).toEqual({ row: 2, col: 0 });
+  });
+
+  it('整列选择与范围', () => {
+    const selection = createColumnSelection(3);
+    const extended = extendColumnSelection(selection, 1);
+
+    expect(extended).toEqual({ mode: 'columns', anchorCol: 3, focusCol: 1 });
+    expect(selectionRange(extended, bounds)).toEqual({
+      startRow: 0,
+      startCol: 1,
+      endRow: 999,
+      endCol: 3,
+    });
+    expect(selectionActiveCell(extended)).toEqual({ row: 0, col: 1 });
+  });
+
+  it('全表选择覆盖完整范围', () => {
+    const selection = createAllSelection();
+    expect(selectionRange(selection, bounds)).toEqual({
+      startRow: 0,
+      startCol: 0,
+      endRow: 999,
+      endCol: 99,
+    });
+    expect(selectionActiveCell(selection)).toEqual({ row: 0, col: 0 });
+  });
+
+  it('单元格选区扩展时会切换回 cells 模式', () => {
+    const extended = extendSelection(createRowSelection(2), { row: 4, col: 6 });
+    expect(extended.mode).toBe('cells');
   });
 });

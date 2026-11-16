@@ -15,14 +15,14 @@
             title="加粗"
             @click="toggleBold"
           >
-            <strong>B</strong>
+            <n-icon><FormatBoldOutlined /></n-icon>
           </n-button>
           <n-button
             :type="activeStyle.italic ? 'primary' : 'default'"
             title="斜体"
             @click="toggleItalic"
           >
-            <em>I</em>
+            <n-icon><FormatItalicOutlined /></n-icon>
           </n-button>
         </n-button-group>
 
@@ -31,21 +31,24 @@
         <n-button-group size="small">
           <n-button
             :type="activeStyle.align === 'left' ? 'primary' : 'default'"
+            title="左对齐"
             @click="setAlign('left')"
           >
-            左
+            <n-icon><FormatAlignLeftOutlined /></n-icon>
           </n-button>
           <n-button
             :type="activeStyle.align === 'center' ? 'primary' : 'default'"
+            title="居中"
             @click="setAlign('center')"
           >
-            中
+            <n-icon><FormatAlignCenterOutlined /></n-icon>
           </n-button>
           <n-button
             :type="activeStyle.align === 'right' ? 'primary' : 'default'"
+            title="右对齐"
             @click="setAlign('right')"
           >
-            右
+            <n-icon><FormatAlignRightOutlined /></n-icon>
           </n-button>
         </n-button-group>
 
@@ -110,7 +113,22 @@
 
 <script setup>
 import { ref } from 'vue';
-import { NButton, NButtonGroup, NConfigProvider, NDivider, NSelect, NTag } from 'naive-ui';
+import {
+  NButton,
+  NButtonGroup,
+  NConfigProvider,
+  NDivider,
+  NIcon,
+  NSelect,
+  NTag,
+} from 'naive-ui';
+import {
+  FormatAlignCenterOutlined,
+  FormatAlignLeftOutlined,
+  FormatAlignRightOutlined,
+  FormatBoldOutlined,
+  FormatItalicOutlined,
+} from '@vicons/material';
 import SpreadsheetGrid from '@/spreadsheet/SpreadsheetGrid.vue';
 
 const gridRef = ref(null);
