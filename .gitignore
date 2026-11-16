@@ -1,0 +1,45 @@
+# 依赖与构建产物
+node_modules/
+frontend/dist/
+frontend/coverage/
+backend/target/
+*.class
+*.jar
+
+# 日志与临时文件
+*.log
+logs/
+*.pid
+*.tmp
+
+# 本地环境与凭据
+*local.yml
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+
+# 数据库备份（备份文件必须放在仓库外，这里做兜底）
+*.sql.gz
+*.dump
+backups/
+
+# IDE / 编辑器
+.idea/
+*.iml
+.vscode/
+.settings/
+.classpath
+.project
+*.swp
+
+# 操作系统
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 其他
+.eslintcache
+.vite/

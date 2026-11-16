@@ -1,0 +1,29 @@
+spring:
+  application:
+    name: sheet-lite
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:local}
+  datasource:
+    hikari:
+      # 本地开发允许数据库暂不可用时先启动服务；首个真实 SQL 仍会暴露连接问题。
+      initialization-fail-timeout: -1
+      maximum-pool-size: ${APP_DB_POOL_MAX:10}
+      minimum-idle: 1
+      connection-timeout: 5000
+
+server:
+  port: ${SERVER_PORT:8080}
+  shutdown: graceful
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    banner: false
+
+logging:
+  level:
+    root: INFO
+    com.example.sheetlite: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%X{traceId:-no-trace}] %logger{40} - %msg%n"
