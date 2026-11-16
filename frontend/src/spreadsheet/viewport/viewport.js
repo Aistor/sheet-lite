@@ -40,15 +40,26 @@ export function computeViewport({
     };
   }
 
-  const firstVisibleRow = Math.floor(scrollTop / layout.rowHeight);
-  const lastVisibleRow = Math.min(
-    layout.rowCount - 1,
-    Math.ceil((scrollTop + bodyHeight) / layout.rowHeight) - 1,
+  if (layout.totalHeight <= 0 || layout.totalWidth <= 0) {
+    return {
+      firstRow: 0,
+      lastRow: -1,
+      firstCol: 0,
+      lastCol: -1,
+      visibleRows: 0,
+      visibleColumns: 0,
+    };
+  }
+
+  const firstVisibleRow = Math.max(0, layout.rowAt(scrollTop));
+  const lastVisibleRow = Math.max(
+    firstVisibleRow,
+    layout.rowAt(Math.min(scrollTop + bodyHeight - 0.001, layout.totalHeight - 0.001)),
   );
-  const firstVisibleCol = Math.floor(scrollLeft / layout.columnWidth);
-  const lastVisibleCol = Math.min(
-    layout.columnCount - 1,
-    Math.ceil((scrollLeft + bodyWidth) / layout.columnWidth) - 1,
+  const firstVisibleCol = Math.max(0, layout.columnAt(scrollLeft));
+  const lastVisibleCol = Math.max(
+    firstVisibleCol,
+    layout.columnAt(Math.min(scrollLeft + bodyWidth - 0.001, layout.totalWidth - 0.001)),
   );
 
   const firstRow = Math.max(0, firstVisibleRow - overscanRows);
@@ -206,19 +217,21 @@ export function scrollToCell({
   const bodyHeight = Math.max(0, viewportHeight - layout.headerHeight);
   const cellX = layout.columnX(col);
   const cellY = layout.rowY(row);
+  const cellWidth = layout.columnWidthOf(col);
+  const cellHeight = layout.rowHeightOf(row);
 
   let left = scrollLeft;
   if (cellX < left) {
     left = cellX;
-  } else if (cellX + layout.columnWidth > left + bodyWidth) {
-    left = cellX + layout.columnWidth - bodyWidth;
+  } else if (cellX + cellWidth > left + bodyWidth) {
+    left = cellX + cellWidth - bodyWidth;
   }
 
   let top = scrollTop;
   if (cellY < top) {
     top = cellY;
-  } else if (cellY + layout.rowHeight > top + bodyHeight) {
-    top = cellY + layout.rowHeight - bodyHeight;
+  } else if (cellY + cellHeight > top + bodyHeight) {
+    top = cellY + cellHeight - bodyHeight;
   }
 
   return clampScroll(left, top, { layout, viewportWidth, viewportHeight });

@@ -11,6 +11,7 @@
       aria-label="可编辑表格"
       @scroll.passive="handleScroll"
       @pointerdown="handlePointerDown"
+      @pointermove="handleHoverMove"
       @dblclick="handleDoubleClick"
       @keydown="handleKeyDown"
       @paste="handlePaste"
@@ -107,10 +108,12 @@ const commands = createCommandManager({
 const renderer = createGridRenderer();
 
 const MAX_STYLE_CELLS = 100_000;
+const layoutVersion = ref(0);
 
 let editorText = '';
 let composing = false;
 let dragging = false;
+let resizeState = null;
 let dragPointer = null;
 let dragFrame = 0;
 let noticeTimer = 0;
@@ -124,12 +127,15 @@ watch(
   { immediate: true },
 );
 
-const spacerStyle = computed(() => ({
-  // 宽度加上表头，使滚动上限能把最后一列完整滚入正文区。
-  width: `${layout.totalWidth + layout.headerWidth}px`,
-  // 高度受浏览器上限约束，超出部分由纵向滚动映射承担。
-  height: `${Math.min(layout.totalHeight, MAX_SAFE_CONTENT_HEIGHT) + layout.headerHeight}px`,
-}));
+const spacerStyle = computed(() => {
+  void layoutVersion.value;
+  return {
+    // 宽度加上表头，使滚动上限能把最后一列完整滚入正文区。
+    width: `${layout.totalWidth + layout.headerWidth}px`,
+    // 高度受浏览器上限约束，超出部分由纵向滚动映射承担。
+    height: `${Math.min(layout.totalHeight, MAX_SAFE_CONTENT_HEIGHT) + layout.headerHeight}px`,
+  };
+});
 
 const state = {
   scrollLeft: 0,
@@ -277,6 +283,11 @@ function handlePointerDown(event) {
   if (editing.value) {
     commitEdit();
   }
+  const resizeTarget = findResizeTarget(event.clientX, event.clientY);
+  if (resizeTarget) {
+    startResize(resizeTarget);
+    return;
+  }
   const cell = cellAt(event.clientX, event.clientY);
   if (!cell) {
     return;
@@ -375,6 +386,140 @@ function handlePointerUp() {
     dragFrame = 0;
   }
   window.removeEventListener('pointermove', handlePointerMove);
+}
+
+function findResizeTarget(clientX, clientY) {
+  const scroller = scrollerRef.value;
+  if (!scroller) {
+    return null;
+  }
+  const rect = scroller.getBoundingClientRect();
+  const x = clientX - rect.left;
+  const y = clientY - rect.top;
+  const threshold = 5;
+
+  if (y < layout.headerHeight && x >= layout.headerWidth) {
+    const contentX = x - layout.headerWidth + state.scrollLeft;
+    for (let col = state.viewport.firstCol; col <= state.viewport.lastCol; col += 1) {
+      const right = layout.columnX(col) + layout.columnWidthOf(col);
+      if (Math.abs(contentX - right) <= threshold) {
+        return {
+          type: 'column',
+          index: col,
+          startSize: layout.columnWidthOf(col),
+          startCoord: clientX,
+        };
+      }
+    }
+    return null;
+  }
+
+  if (x < layout.headerWidth && y >= layout.headerHeight) {
+    const contentY = y - layout.headerHeight + state.scrollTop;
+    for (let row = state.viewport.firstRow; row <= state.viewport.lastRow; row += 1) {
+      const bottom = layout.rowY(row) + layout.rowHeightOf(row);
+      if (Math.abs(contentY - bottom) <= threshold) {
+        return {
+          type: 'row',
+          index: row,
+          startSize: layout.rowHeightOf(row),
+          startCoord: clientY,
+        };
+      }
+    }
+  }
+  return null;
+}
+
+function startResize(target) {
+  resizeState = target;
+  window.addEventListener('pointermove', handleResizeMove);
+  window.addEventListener('pointerup', endResize, { once: true });
+}
+
+function handleResizeMove(event) {
+  if (!resizeState) {
+    return;
+  }
+  const delta =
+    resizeState.type === 'column'
+      ? event.clientX - resizeState.startCoord
+      : event.clientY - resizeState.startCoord;
+  const nextSize = Math.min(1000, Math.max(12, Math.round(resizeState.startSize + delta)));
+  if (resizeState.type === 'column') {
+    layout.setColumnWidth(resizeState.index, nextSize);
+  } else {
+    layout.setRowHeight(resizeState.index, nextSize);
+  }
+  layoutVersion.value += 1;
+  refreshViewport();
+  positionEditor();
+  scheduleDraw();
+}
+
+function endResize() {
+  resizeState = null;
+  window.removeEventListener('pointermove', handleResizeMove);
+  handleResize();
+}
+
+function handleHoverMove(event) {
+  if (resizeState || dragging) {
+    return;
+  }
+  const scroller = scrollerRef.value;
+  if (!scroller) {
+    return;
+  }
+  const target = findResizeTarget(event.clientX, event.clientY);
+  scroller.style.cursor = target ? (target.type === 'column' ? 'col-resize' : 'row-resize') : '';
+}
+
+function afterLayoutChange() {
+  layoutVersion.value += 1;
+  handleResize();
+}
+
+function hideSelectedRows() {
+  const range = selectionRange(selection.value);
+  const count = range.endRow - range.startRow + 1;
+  if (count > 2000) {
+    showNotice('选区行数过多，暂不支持批量隐藏');
+    return;
+  }
+  for (let row = range.startRow; row <= range.endRow; row += 1) {
+    layout.setRowHeight(row, 0);
+  }
+  afterLayoutChange();
+}
+
+function hideSelectedColumns() {
+  const range = selectionRange(selection.value);
+  const count = range.endCol - range.startCol + 1;
+  if (count > 200) {
+    showNotice('选区列数过多，暂不支持批量隐藏');
+    return;
+  }
+  for (let col = range.startCol; col <= range.endCol; col += 1) {
+    layout.setColumnWidth(col, 0);
+  }
+  afterLayoutChange();
+}
+
+function showSelectedRows() {
+  const range = selectionRange(selection.value);
+  for (let row = range.startRow; row <= range.endRow; row += 1) {
+    layout.resetRowHeight(row);
+  }
+  afterLayoutChange();
+}
+
+function showSelectedColumns() {
+  const range = selectionRange(selection.value);
+  for (let col = range.startCol; col <= range.endCol; col += 1) {
+    layout.resetColumnWidth(col);
+  }
+  afterLayoutChange();
 }
 
 function handleDoubleClick(event) {
@@ -636,7 +781,15 @@ function applyNumberFormat(numberFormat) {
   applyStyle({ numberFormat });
 }
 
-defineExpose({ applyStyle, applyBorder, applyNumberFormat });
+defineExpose({
+  applyStyle,
+  applyBorder,
+  applyNumberFormat,
+  hideSelectedRows,
+  hideSelectedColumns,
+  showSelectedRows,
+  showSelectedColumns,
+});
 
 function undo() {
   if (commands.undo(commandContext)) {
@@ -756,6 +909,7 @@ onBeforeUnmount(() => {
     dragFrame = 0;
   }
   window.removeEventListener('pointermove', handlePointerMove);
+  window.removeEventListener('pointermove', handleResizeMove);
   if (frameHandle !== 0) {
     window.cancelAnimationFrame(frameHandle);
     frameHandle = 0;

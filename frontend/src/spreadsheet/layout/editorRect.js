@@ -15,7 +15,7 @@ export function cellScreenRect({ layout, scrollLeft, scrollTop, row, col }) {
   return {
     left: layout.headerWidth + layout.columnX(col) - scrollLeft,
     top: layout.headerHeight + layout.rowY(row) - scrollTop,
-    width: layout.columnWidth,
-    height: layout.rowHeight,
+    width: layout.columnWidthOf(col),
+    height: layout.rowHeightOf(row),
   };
 }

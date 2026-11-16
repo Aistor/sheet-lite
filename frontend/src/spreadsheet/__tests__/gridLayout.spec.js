@@ -52,4 +52,21 @@ describe('createGridLayout', () => {
     expect(() => createGridLayout({ rowHeight: 0 })).toThrow(RangeError);
     expect(() => createGridLayout({ columnWidth: Number.NaN })).toThrow(RangeError);
   });
+
+  it('支持稀疏行高/列宽覆盖并跳过隐藏行列', () => {
+    const custom = createGridLayout({ rowCount: 100, columnCount: 20 });
+    custom.setRowHeight(1, 0);
+    custom.setColumnWidth(2, 0);
+    custom.setRowHeight(3, 48);
+
+    expect(custom.rowHeightOf(1)).toBe(0);
+    expect(custom.columnWidthOf(2)).toBe(0);
+    expect(custom.totalHeight).toBe(100 * 24 - 24 + 24);
+    expect(custom.rowAt(24)).toBe(2);
+    expect(custom.columnAt(100)).toBe(1);
+    expect(custom.cellRect(3, 2)).toEqual({ x: 200, y: 48, width: 0, height: 48 });
+
+    custom.resetRowHeight(1);
+    expect(custom.rowHeightOf(1)).toBe(24);
+  });
 });

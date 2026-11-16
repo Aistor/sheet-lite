@@ -86,6 +86,15 @@
           <n-button @click="applyBorder('outer')">外框</n-button>
           <n-button @click="applyBorder('none')">无边框</n-button>
         </n-button-group>
+
+        <n-divider vertical />
+
+        <n-button-group size="small">
+          <n-button @click="hideRows">隐藏行</n-button>
+          <n-button @click="hideCols">隐藏列</n-button>
+          <n-button @click="showRows">显示行</n-button>
+          <n-button @click="showCols">显示列</n-button>
+        </n-button-group>
       </div>
 
       <main class="editor-content">
@@ -169,6 +178,22 @@ function applyFillColor(backgroundColor) {
 
 function applyBorder(mode) {
   gridRef.value?.applyBorder(mode);
+}
+
+function hideRows() {
+  gridRef.value?.hideSelectedRows();
+}
+
+function hideCols() {
+  gridRef.value?.hideSelectedColumns();
+}
+
+function showRows() {
+  gridRef.value?.showSelectedRows();
+}
+
+function showCols() {
+  gridRef.value?.showSelectedColumns();
 }
 </script>
 
