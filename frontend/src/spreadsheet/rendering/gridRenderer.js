@@ -11,7 +11,9 @@ export const DEFAULT_GRID_THEME = Object.freeze({
   headerActiveBackground: '#e8efff',
   activeFill: 'rgba(37, 99, 235, 0.10)',
   activeBorder: '#2563eb',
+  cellText: '#1f2329',
   font: '12px "Segoe UI", "PingFang SC", sans-serif',
+  cellFont: '13px "Segoe UI", "PingFang SC", sans-serif',
 });
 
 /**
@@ -37,12 +39,16 @@ export function createGridRenderer({ theme = {} } = {}) {
    * @param {number} params.scrollLeft 水平滚动偏移
    * @param {number} params.scrollTop 垂直滚动偏移
    * @param {{ row: number, col: number } | null} params.activeCell 活动单元格
+   * @param {(row: number, col: number) => object | undefined} [params.getCell] 单元格读取函数
    * @param {number} params.width 画布 CSS 宽度
    * @param {number} params.height 画布 CSS 高度
-   * @returns {{ rows: number, columns: number, labels: number }} 绘制统计
+   * @returns {{ rows: number, columns: number, labels: number, texts: number }} 绘制统计
    */
-  function draw(ctx, { layout, viewport, scrollLeft, scrollTop, activeCell, width, height }) {
-    const stats = { rows: 0, columns: 0, labels: 0 };
+  function draw(
+    ctx,
+    { layout, viewport, scrollLeft, scrollTop, activeCell, getCell, width, height },
+  ) {
+    const stats = { rows: 0, columns: 0, labels: 0, texts: 0 };
     const bodyLeft = layout.headerWidth;
     const bodyTop = layout.headerHeight;
     const bodyWidth = Math.max(0, width - bodyLeft);
@@ -66,6 +72,20 @@ export function createGridRenderer({ theme = {} } = {}) {
       height,
       stats,
     });
+    if (getCell) {
+      drawCellTexts(ctx, {
+        layout,
+        viewport,
+        scrollLeft,
+        scrollTop,
+        bodyLeft,
+        bodyTop,
+        bodyWidth,
+        bodyHeight,
+        getCell,
+        stats,
+      });
+    }
     drawColumnHeader(ctx, {
       layout,
       viewport,
@@ -152,6 +172,51 @@ export function createGridRenderer({ theme = {} } = {}) {
       ctx.strokeStyle = currentTheme.activeBorder;
       ctx.lineWidth = 2;
       ctx.strokeRect(x + 1, y + 1, layout.columnWidth - 2, layout.rowHeight - 2);
+    }
+
+    ctx.restore();
+  }
+
+  function drawCellTexts(ctx, params) {
+    const {
+      layout,
+      viewport,
+      scrollLeft,
+      scrollTop,
+      bodyLeft,
+      bodyTop,
+      bodyWidth,
+      bodyHeight,
+      getCell,
+      stats,
+    } = params;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(bodyLeft, bodyTop, bodyWidth, bodyHeight);
+    ctx.clip();
+
+    ctx.font = currentTheme.cellFont;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = currentTheme.cellText;
+
+    for (let row = viewport.firstRow; row <= viewport.lastRow; row += 1) {
+      for (let col = viewport.firstCol; col <= viewport.lastCol; col += 1) {
+        const text = getCell(row, col)?.rawInput;
+        if (text === undefined || text === '') {
+          continue;
+        }
+        const x = bodyLeft + layout.columnX(col) - scrollLeft;
+        const y = bodyTop + layout.rowY(row) - scrollTop;
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(x + 1, y + 1, layout.columnWidth - 2, layout.rowHeight - 2);
+        ctx.clip();
+        ctx.fillText(text, x + 6, y + layout.rowHeight / 2);
+        ctx.restore();
+        stats.texts += 1;
+      }
     }
 
     ctx.restore();

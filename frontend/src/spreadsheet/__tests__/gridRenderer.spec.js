@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { createTextCell } from '../core/cell.js';
 import { createGridLayout } from '../layout/gridLayout.js';
 import { createGridRenderer } from '../rendering/gridRenderer.js';
 import { computeViewport } from '../viewport/viewport.js';
@@ -145,6 +146,29 @@ describe('gridRenderer', () => {
     expect(ctx.texts).toContain('A');
     expect(ctx.texts).toContain('1');
     expect(ctx.texts.length).toBeLessThan(100);
+  });
+
+  it('绘制非空单元格文本并跳过空输入', () => {
+    const ctx = createFakeContext();
+    const cells = new Map([
+      ['0:0', createTextCell('Hello')],
+      ['1:1', createTextCell('世界')],
+      ['2:2', createTextCell('')],
+    ]);
+    const stats = createGridRenderer().draw(ctx, {
+      layout,
+      viewport,
+      scrollLeft: 0,
+      scrollTop: 0,
+      activeCell: null,
+      getCell: (row, col) => cells.get(`${row}:${col}`),
+      width: 848,
+      height: 624,
+    });
+
+    expect(stats.texts).toBe(2);
+    expect(ctx.texts).toContain('Hello');
+    expect(ctx.texts).toContain('世界');
   });
 
   it('远端滚动时仍只绘制窗口内的行号', () => {

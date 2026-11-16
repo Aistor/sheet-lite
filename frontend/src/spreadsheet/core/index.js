@@ -9,6 +9,8 @@ export {
   toA1,
 } from './coordinates.js';
 
+export { CellValueType, cellDisplayText, createTextCell, isEmptyInput } from './cell.js';
+
 export { clampCell, moveActiveCell } from './selection.js';
 
 export {
