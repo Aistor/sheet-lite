@@ -8,13 +8,14 @@
 
 ## 当前阶段
 
-阶段 0：需求和工程基线。本仓库已完成文档与工程骨架，尚不包含网格渲染、编辑、命令、公式等业务实现。
+阶段 1：空白网格原型。阶段 0 的工程基线已完成；网格已具备 Canvas 绘制、固定尺寸布局、视口计算、滚动与活动单元格，单元格数据、编辑、命令和持久化尚未开始。
 
 - [x] `docs/` 项目文档与 ADR
-- [x] 前端骨架（Vite + Vue 3 + ESLint + Vitest，核心坐标/范围契约与单测）
-- [x] 后端骨架（Spring Boot 4 + JDK 21 + 统一响应/异常 + traceId + 健康检查）
+- [x] 阶段 0 基线：Vite + Vue 3 + ESLint + Vitest；Spring Boot 4 + 统一响应/异常 + traceId + 健康检查
+- [x] 阶段 1：Canvas 网格、固定行高/列宽布局、视口与 overscan、滚动、活动单元格、方向键移动
 - [x] 根目录 `README.md`、`.gitignore`、`.editorconfig`
 - [x] MySQL `sheet_lite` 库按 `V001__init_schema.sql` 初始化，结构与基线一致（11 张 `sl_*` 表、无 `schema_version`、`utf8mb4_0900_ai_ci`、表/列注释齐全）
+- [ ] 阶段 2：稀疏单元格模型、DOM 编辑器与输入
 - [ ] CI 门禁（`origin` 远端已建立，尚未配置流水线）
 
 ## 目录结构
@@ -24,11 +25,11 @@ sheet-lite/
 ├── frontend/                 # Vue 3 应用与表格内核
 │   ├── src/
 │   │   ├── pages/            # 页面
-│   │   ├── spreadsheet/      # 表格内核（当前只有 core 的坐标/范围契约）
+│   │   ├── spreadsheet/      # 表格内核（core/layout/viewport/rendering + Vue 宿主组件）
 │   │   └── styles.css
 │   └── tests/manual/         # 浏览器人工验收清单
 ├── backend/                  # Spring Boot 服务（本机 Maven，无 Wrapper）
-│   ├── src/main/java/com/example/sheetlite/
+│   ├── src/main/java/com/sheetlite/
 │   └── src/main/resources/
 │       ├── application.yml           # 通用配置，不含凭据
 │       ├── application-local.yml     # 本地数据源覆盖，已被 .gitignore 忽略
@@ -133,7 +134,8 @@ mysql --host=127.0.0.1 --port=3306 --user=<user> --database=sheet_lite \
 
 ## 已知限制
 
-- 阶段 0 基线，`src/spreadsheet` 仅有坐标/范围纯函数，尚无渲染、选区、编辑、命令与持久化。
+- 阶段 1 基础：已有固定尺寸 Canvas 网格、视口/滚动与活动单元格；尚无单元格数据、区域选区、编辑、命令与持久化。
+- 逻辑坐标受浏览器最大滚动尺寸约束：默认 1,048,576 行 × 24px ≈ 25.2M px，Chromium 系可覆盖，Firefox 等可能被截断；分段滚动或名称框跳转尚未实现。
 - `backend/` 目前只有健康检查与统一错误结构，没有工作簿/单元格 API。
 - 本地数据源默认值在 `backend/src/main/resources/application-local.yml`，该文件已被忽略；新环境需要自行创建或改用环境变量。应用默认延迟建立连接池，数据库不可达时服务仍可启动，问题会在首次真实 SQL 时暴露。
 - 已配置 `origin` 远端（`master` 跟踪 `origin/master`），但尚无 CI 工作流；当前质量门禁通过本地脚本（`yarn lint` / `yarn test` / `yarn build` / `mvn test`）执行。
