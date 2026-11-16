@@ -137,7 +137,7 @@ mysql --host=127.0.0.1 --port=3306 --user=<user> --database=sheet_lite \
 ## 已知限制
 
 - 阶段 3 基础：区域选择、TSV 复制粘贴与撤销栈已可用；尚无样式、行列尺寸、公式、持久化，也暂不支持 HTML 剪贴板与行列整选。
-- 逻辑坐标受浏览器最大滚动尺寸约束：默认 1,048,576 行 × 24px ≈ 25.2M px，Chromium 系可覆盖，Firefox 等可能被截断；分段滚动或名称框跳转尚未实现。
+- 超大逻辑坐标通过纵向滚动映射承载：物理滚动条压缩到浏览器安全高度，绘制与命中仍使用逻辑坐标，最后一行/列可到达；名称框跳转尚未实现。
 - `backend/` 目前只有健康检查与统一错误结构，没有工作簿/单元格 API。
 - 本地数据源默认值在 `backend/src/main/resources/application-local.yml`，该文件已被忽略；新环境需要自行创建或改用环境变量。应用默认延迟建立连接池，数据库不可达时服务仍可启动，问题会在首次真实 SQL 时暴露。
 - 已配置 `origin` 远端（`master` 跟踪 `origin/master`），但尚无 CI 工作流；当前质量门禁通过本地脚本（`yarn lint` / `yarn test` / `yarn build` / `mvn test`）执行。

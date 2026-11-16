@@ -109,6 +109,55 @@ export function autoScrollDelta({
 }
 
 /**
+ * 建立物理滚动与逻辑坐标的映射。
+ *
+ * 浏览器对单个元素的高度有上限（且与 devicePixelRatio 相关），百万行无法直接
+ * 用一个 spacer 表达。这里把逻辑内容压缩到安全高度，滚动条在物理像素上移动，
+ * 绘制与命中测试仍使用逻辑偏移。
+ *
+ * @param {object} params 参数
+ * @param {number} params.contentSize 逻辑内容尺寸
+ * @param {number} params.viewportSize 正文区尺寸（已扣除表头）
+ * @param {number} params.maxContentSize 浏览器可安全承载的内容高度
+ * @returns {{ logicalMax: number, physicalMax: number, scale: number, physicalContent: number }} 映射
+ */
+export function createScrollMapping({ contentSize, viewportSize, maxContentSize }) {
+  const logicalMax = Math.max(0, contentSize - viewportSize);
+  const physicalContent = Math.min(contentSize, Math.max(maxContentSize, viewportSize));
+  const physicalMax = Math.max(0, physicalContent - viewportSize);
+  const scale = physicalMax === 0 ? 0 : logicalMax / physicalMax;
+  return { logicalMax, physicalMax, scale, physicalContent };
+}
+
+/**
+ * 逻辑偏移转物理滚动偏移。
+ *
+ * @param {{ physicalMax: number, scale: number }} mapping 映射
+ * @param {number} logical 逻辑偏移
+ * @returns {number} 物理偏移
+ */
+export function logicalToPhysical(mapping, logical) {
+  if (mapping.physicalMax === 0 || mapping.scale === 0) {
+    return 0;
+  }
+  return Math.min(Math.max(0, logical) / mapping.scale, mapping.physicalMax);
+}
+
+/**
+ * 物理滚动偏移转逻辑偏移。
+ *
+ * @param {{ logicalMax: number, physicalMax: number, scale: number }} mapping 映射
+ * @param {number} physical 物理偏移
+ * @returns {number} 逻辑偏移
+ */
+export function physicalToLogical(mapping, physical) {
+  if (mapping.physicalMax === 0) {
+    return 0;
+  }
+  return Math.min(Math.max(0, physical) * mapping.scale, mapping.logicalMax);
+}
+
+/**
  * 把滚动偏移限制在内容边界内。
  *
  * @param {number} scrollLeft 水平偏移

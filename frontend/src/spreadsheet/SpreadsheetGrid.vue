@@ -53,7 +53,15 @@ import { createCommandManager } from '@/spreadsheet/commands/commandManager.js';
 import { createSetCellCommand } from '@/spreadsheet/commands/setCellCommand.js';
 import { createSetCellsBatchCommand } from '@/spreadsheet/commands/setCellsBatchCommand.js';
 import { parseTsv, serializeRangeToTsv } from '@/spreadsheet/clipboard/tsv.js';
-import { clampScroll, computeViewport, scrollToCell, autoScrollDelta } from '@/spreadsheet/viewport/viewport.js';
+import {
+  autoScrollDelta,
+  clampScroll,
+  computeViewport,
+  createScrollMapping,
+  logicalToPhysical,
+  physicalToLogical,
+  scrollToCell,
+} from '@/spreadsheet/viewport/viewport.js';
 
 const props = defineProps({
   rowCount: { type: Number, default: 1048576 },
@@ -66,6 +74,12 @@ const layout = createGridLayout({
   rowCount: props.rowCount,
   columnCount: props.columnCount,
 });
+
+// Chromium 的元素高度上限按设备像素计算；按 devicePixelRatio 折算出 CSS 上限并预留余量。
+const MAX_SAFE_CONTENT_HEIGHT = Math.max(
+  2_000_000,
+  33_000_000 / (window.devicePixelRatio || 1),
+);
 
 const shellRef = ref(null);
 const canvasRef = ref(null);
@@ -99,9 +113,10 @@ watch(
 );
 
 const spacerStyle = computed(() => ({
-  // 额外加上表头尺寸，使滚动上限能把最后一行/列完整滚入正文区（不被行列头或滚动条遮住）。
+  // 宽度加上表头，使滚动上限能把最后一列完整滚入正文区。
   width: `${layout.totalWidth + layout.headerWidth}px`,
-  height: `${layout.totalHeight + layout.headerHeight}px`,
+  // 高度受浏览器上限约束，超出部分由纵向滚动映射承担。
+  height: `${Math.min(layout.totalHeight, MAX_SAFE_CONTENT_HEIGHT) + layout.headerHeight}px`,
 }));
 
 const state = {
@@ -109,6 +124,12 @@ const state = {
   scrollTop: 0,
   width: 0,
   height: 0,
+  verticalMapping: {
+    logicalMax: 0,
+    physicalMax: 0,
+    scale: 0,
+    physicalContent: 0,
+  },
   viewport: {
     firstRow: 0,
     lastRow: -1,
@@ -183,14 +204,17 @@ function syncScroll(left, top) {
   if (!scroller) {
     return;
   }
-  if (scroller.scrollLeft !== left) {
-    scroller.scrollLeft = left;
+  const targetLeft = Math.max(0, left);
+  const targetTop = Math.min(Math.max(0, top), state.verticalMapping.logicalMax);
+  if (scroller.scrollLeft !== targetLeft) {
+    scroller.scrollLeft = targetLeft;
   }
-  if (scroller.scrollTop !== top) {
-    scroller.scrollTop = top;
+  const physicalTop = logicalToPhysical(state.verticalMapping, targetTop);
+  if (scroller.scrollTop !== physicalTop) {
+    scroller.scrollTop = physicalTop;
   }
-  state.scrollLeft = scroller.scrollLeft;
-  state.scrollTop = scroller.scrollTop;
+  state.scrollLeft = targetLeft;
+  state.scrollTop = targetTop;
   refreshViewport();
   scheduleDraw();
 }
@@ -204,7 +228,7 @@ function handleScroll() {
     commitEdit();
   }
   state.scrollLeft = scroller.scrollLeft;
-  state.scrollTop = scroller.scrollTop;
+  state.scrollTop = physicalToLogical(state.verticalMapping, scroller.scrollTop);
   refreshViewport();
   scheduleDraw();
 }
@@ -220,9 +244,11 @@ function cellAt(clientX, clientY) {
   if (x < layout.headerWidth || y < layout.headerHeight) {
     return null;
   }
+  const logicalLeft = scroller.scrollLeft;
+  const logicalTop = physicalToLogical(state.verticalMapping, scroller.scrollTop);
   return layout.hitTest(
-    x - layout.headerWidth + scroller.scrollLeft,
-    y - layout.headerHeight + scroller.scrollTop,
+    x - layout.headerWidth + logicalLeft,
+    y - layout.headerHeight + logicalTop,
   );
 }
 
@@ -257,12 +283,14 @@ function cellAtClamped(clientX, clientY) {
     return null;
   }
   const rect = scroller.getBoundingClientRect();
+  const logicalLeft = scroller.scrollLeft;
+  const logicalTop = physicalToLogical(state.verticalMapping, scroller.scrollTop);
   const contentX = Math.min(
-    Math.max(0, clientX - rect.left - layout.headerWidth + scroller.scrollLeft),
+    Math.max(0, clientX - rect.left - layout.headerWidth + logicalLeft),
     layout.totalWidth - 1,
   );
   const contentY = Math.min(
-    Math.max(0, clientY - rect.top - layout.headerHeight + scroller.scrollTop),
+    Math.max(0, clientY - rect.top - layout.headerHeight + logicalTop),
     layout.totalHeight - 1,
   );
   return layout.hitTest(contentX, contentY);
@@ -296,19 +324,19 @@ function autoScrollStep() {
     bottom: rect.bottom,
   });
   if (dx !== 0 || dy !== 0) {
-    scroller.scrollLeft = Math.min(
-      Math.max(0, scroller.scrollLeft + dx),
-      Math.max(0, layout.totalWidth - scroller.clientWidth),
+    const bodyWidth = Math.max(0, state.width - layout.headerWidth);
+    const nextLeft = Math.min(
+      Math.max(0, state.scrollLeft + dx),
+      Math.max(0, layout.totalWidth - bodyWidth),
     );
-    scroller.scrollTop = Math.min(
-      Math.max(0, scroller.scrollTop + dy),
-      Math.max(0, layout.totalHeight - scroller.clientHeight),
+    const nextTop = Math.min(
+      Math.max(0, state.scrollTop + dy * (state.verticalMapping.scale || 1)),
+      state.verticalMapping.logicalMax,
     );
-    state.scrollLeft = scroller.scrollLeft;
-    state.scrollTop = scroller.scrollTop;
-    refreshViewport();
-    extendSelectionToPointer();
-    scheduleDraw();
+    if (nextLeft !== state.scrollLeft || nextTop !== state.scrollTop) {
+      syncScroll(nextLeft, nextTop);
+      extendSelectionToPointer();
+    }
   }
   if (dragging) {
     dragFrame = window.requestAnimationFrame(autoScrollStep);
@@ -621,8 +649,17 @@ function handleResize() {
     viewportWidth: state.width,
     viewportHeight: state.height,
   });
+  state.verticalMapping = createScrollMapping({
+    contentSize: layout.totalHeight,
+    viewportSize: Math.max(0, state.height - layout.headerHeight),
+    maxContentSize: MAX_SAFE_CONTENT_HEIGHT,
+  });
   state.scrollLeft = clamped.scrollLeft;
-  state.scrollTop = clamped.scrollTop;
+  state.scrollTop = Math.min(clamped.scrollTop, state.verticalMapping.logicalMax);
+  if (scroller) {
+    scroller.scrollLeft = state.scrollLeft;
+    scroller.scrollTop = logicalToPhysical(state.verticalMapping, state.scrollTop);
+  }
   refreshViewport();
   positionEditor();
   scheduleDraw();
@@ -671,6 +708,7 @@ onBeforeUnmount(() => {
   width: 100%;
   height: 100%;
   border-radius: 8px;
+  clip-path: inset(0 round 8px);
   pointer-events: none;
 }
 
@@ -678,6 +716,7 @@ onBeforeUnmount(() => {
   position: absolute;
   inset: 0;
   overflow: auto;
+  border-radius: 8px;
   outline: none;
 }
 

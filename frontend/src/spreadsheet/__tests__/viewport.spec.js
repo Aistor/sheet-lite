@@ -4,6 +4,9 @@ import {
   autoScrollDelta,
   clampScroll,
   computeViewport,
+  createScrollMapping,
+  logicalToPhysical,
+  physicalToLogical,
   scrollToCell,
 } from '../viewport/viewport.js';
 
@@ -115,6 +118,53 @@ describe('autoScrollDelta', () => {
       dx: -30,
       dy: -30,
     });
+  });
+});
+
+describe('滚动映射', () => {
+  it('内容低于浏览器上限时保持 1:1', () => {
+    const mapping = createScrollMapping({
+      contentSize: 10_000,
+      viewportSize: 600,
+      maxContentSize: 22_000_000,
+    });
+
+    expect(mapping.logicalMax).toBe(9_400);
+    expect(mapping.physicalMax).toBe(9_400);
+    expect(mapping.scale).toBe(1);
+    expect(logicalToPhysical(mapping, 1_000)).toBe(1_000);
+    expect(physicalToLogical(mapping, 1_000)).toBe(1_000);
+  });
+
+  it('内容超过上限时压缩，端点仍可达', () => {
+    const mapping = createScrollMapping({
+      contentSize: 25_000_000,
+      viewportSize: 600,
+      maxContentSize: 22_000_000,
+    });
+
+    expect(mapping.scale).toBeGreaterThan(1);
+    expect(logicalToPhysical(mapping, mapping.logicalMax)).toBeCloseTo(mapping.physicalMax, 6);
+    expect(physicalToLogical(mapping, mapping.physicalMax)).toBeCloseTo(mapping.logicalMax, 6);
+  });
+
+  it('中间值往返误差小于 1px', () => {
+    const mapping = createScrollMapping({
+      contentSize: 25_000_000,
+      viewportSize: 590,
+      maxContentSize: 16_500_000,
+    });
+    const physical = logicalToPhysical(mapping, 12_345_678);
+
+    expect(Math.abs(physicalToLogical(mapping, physical) - 12_345_678)).toBeLessThan(1 / mapping.scale + 1);
+  });
+
+  it('零视口与零内容不产生负值', () => {
+    const mapping = createScrollMapping({ contentSize: 0, viewportSize: 0, maxContentSize: 100 });
+    expect(mapping.logicalMax).toBe(0);
+    expect(mapping.physicalMax).toBe(0);
+    expect(logicalToPhysical(mapping, 100)).toBe(0);
+    expect(physicalToLogical(mapping, 100)).toBe(0);
   });
 });
 

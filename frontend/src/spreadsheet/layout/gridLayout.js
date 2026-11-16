@@ -9,8 +9,8 @@ export const DEFAULT_COLUMN_WIDTH = 100;
 /** 列头高度。 */
 export const DEFAULT_HEADER_HEIGHT = 24;
 
-/** 行头宽度。 */
-export const DEFAULT_HEADER_WIDTH = 48;
+/** 行头宽度（容纳 7 位行号）。 */
+export const DEFAULT_HEADER_WIDTH = 56;
 
 function assertPositiveInteger(value, name) {
   if (!Number.isInteger(value) || value <= 0) {
