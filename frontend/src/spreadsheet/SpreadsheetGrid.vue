@@ -53,7 +53,7 @@ import { createCommandManager } from '@/spreadsheet/commands/commandManager.js';
 import { createSetCellCommand } from '@/spreadsheet/commands/setCellCommand.js';
 import { createSetCellsBatchCommand } from '@/spreadsheet/commands/setCellsBatchCommand.js';
 import { parseTsv, serializeRangeToTsv } from '@/spreadsheet/clipboard/tsv.js';
-import { clampScroll, computeViewport, scrollToCell } from '@/spreadsheet/viewport/viewport.js';
+import { clampScroll, computeViewport, scrollToCell, autoScrollDelta } from '@/spreadsheet/viewport/viewport.js';
 
 const props = defineProps({
   rowCount: { type: Number, default: 1048576 },
@@ -86,6 +86,8 @@ const renderer = createGridRenderer();
 let editorText = '';
 let composing = false;
 let dragging = false;
+let dragPointer = null;
+let dragFrame = 0;
 let noticeTimer = 0;
 
 watch(
@@ -97,8 +99,9 @@ watch(
 );
 
 const spacerStyle = computed(() => ({
-  width: `${layout.totalWidth}px`,
-  height: `${layout.totalHeight}px`,
+  // 额外加上表头尺寸，使滚动上限能把最后一行/列完整滚入正文区（不被行列头或滚动条遮住）。
+  width: `${layout.totalWidth + layout.headerWidth}px`,
+  height: `${layout.totalHeight + layout.headerHeight}px`,
 }));
 
 const state = {
@@ -248,11 +251,28 @@ function handlePointerDown(event) {
   scheduleDraw();
 }
 
-function handlePointerMove(event) {
-  if (!dragging) {
+function cellAtClamped(clientX, clientY) {
+  const scroller = scrollerRef.value;
+  if (!scroller) {
+    return null;
+  }
+  const rect = scroller.getBoundingClientRect();
+  const contentX = Math.min(
+    Math.max(0, clientX - rect.left - layout.headerWidth + scroller.scrollLeft),
+    layout.totalWidth - 1,
+  );
+  const contentY = Math.min(
+    Math.max(0, clientY - rect.top - layout.headerHeight + scroller.scrollTop),
+    layout.totalHeight - 1,
+  );
+  return layout.hitTest(contentX, contentY);
+}
+
+function extendSelectionToPointer() {
+  if (!dragPointer) {
     return;
   }
-  const cell = cellAt(event.clientX, event.clientY);
+  const cell = cellAtClamped(dragPointer.x, dragPointer.y);
   if (!cell) {
     return;
   }
@@ -260,8 +280,59 @@ function handlePointerMove(event) {
   scheduleDraw();
 }
 
+function autoScrollStep() {
+  dragFrame = 0;
+  const scroller = scrollerRef.value;
+  if (!dragging || !dragPointer || !scroller) {
+    return;
+  }
+  const rect = scroller.getBoundingClientRect();
+  const { dx, dy } = autoScrollDelta({
+    pointerX: dragPointer.x,
+    pointerY: dragPointer.y,
+    left: rect.left,
+    top: rect.top,
+    right: rect.right,
+    bottom: rect.bottom,
+  });
+  if (dx !== 0 || dy !== 0) {
+    scroller.scrollLeft = Math.min(
+      Math.max(0, scroller.scrollLeft + dx),
+      Math.max(0, layout.totalWidth - scroller.clientWidth),
+    );
+    scroller.scrollTop = Math.min(
+      Math.max(0, scroller.scrollTop + dy),
+      Math.max(0, layout.totalHeight - scroller.clientHeight),
+    );
+    state.scrollLeft = scroller.scrollLeft;
+    state.scrollTop = scroller.scrollTop;
+    refreshViewport();
+    extendSelectionToPointer();
+    scheduleDraw();
+  }
+  if (dragging) {
+    dragFrame = window.requestAnimationFrame(autoScrollStep);
+  }
+}
+
+function handlePointerMove(event) {
+  if (!dragging) {
+    return;
+  }
+  dragPointer = { x: event.clientX, y: event.clientY };
+  extendSelectionToPointer();
+  if (dragFrame === 0) {
+    dragFrame = window.requestAnimationFrame(autoScrollStep);
+  }
+}
+
 function handlePointerUp() {
   dragging = false;
+  dragPointer = null;
+  if (dragFrame !== 0) {
+    window.cancelAnimationFrame(dragFrame);
+    dragFrame = 0;
+  }
   window.removeEventListener('pointermove', handlePointerMove);
 }
 
@@ -534,11 +605,17 @@ function handleKeyDown(event) {
 
 function handleResize() {
   const shell = shellRef.value;
+  const scroller = scrollerRef.value;
   if (!shell) {
     return;
   }
-  state.width = shell.clientWidth;
-  state.height = shell.clientHeight;
+  state.width = scroller ? scroller.clientWidth : shell.clientWidth;
+  state.height = scroller ? scroller.clientHeight : shell.clientHeight;
+  const canvas = canvasRef.value;
+  if (canvas) {
+    canvas.style.width = `${state.width}px`;
+    canvas.style.height = `${state.height}px`;
+  }
   const clamped = clampScroll(state.scrollLeft, state.scrollTop, {
     layout,
     viewportWidth: state.width,
@@ -556,12 +633,19 @@ onMounted(() => {
   if (shellRef.value) {
     resizeObserver.observe(shellRef.value);
   }
+  if (scrollerRef.value) {
+    resizeObserver.observe(scrollerRef.value);
+  }
   handleResize();
 });
 
 onBeforeUnmount(() => {
   resizeObserver?.disconnect();
   window.clearTimeout(noticeTimer);
+  if (dragFrame !== 0) {
+    window.cancelAnimationFrame(dragFrame);
+    dragFrame = 0;
+  }
   window.removeEventListener('pointermove', handlePointerMove);
   if (frameHandle !== 0) {
     window.cancelAnimationFrame(frameHandle);
@@ -586,6 +670,7 @@ onBeforeUnmount(() => {
   inset: 0;
   width: 100%;
   height: 100%;
+  border-radius: 8px;
   pointer-events: none;
 }
 

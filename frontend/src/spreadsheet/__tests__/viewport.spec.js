@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { createGridLayout } from '../layout/gridLayout.js';
-import { clampScroll, computeViewport, scrollToCell } from '../viewport/viewport.js';
+import {
+  autoScrollDelta,
+  clampScroll,
+  computeViewport,
+  scrollToCell,
+} from '../viewport/viewport.js';
 
 const layout = createGridLayout({
   rowCount: 1000,
@@ -79,6 +84,37 @@ describe('clampScroll', () => {
     expect(
       clampScroll(999999, 999999, { layout, viewportWidth: 848, viewportHeight: 624 }),
     ).toEqual({ scrollLeft: 9200, scrollTop: 23400 });
+  });
+});
+
+describe('autoScrollDelta', () => {
+  const rect = { left: 0, top: 0, right: 800, bottom: 600 };
+
+  it('视口内部不滚动', () => {
+    expect(autoScrollDelta({ pointerX: 400, pointerY: 300, ...rect })).toEqual({ dx: 0, dy: 0 });
+  });
+
+  it('进入右/下边缘时正向滚动', () => {
+    const delta = autoScrollDelta({ pointerX: 790, pointerY: 590, ...rect });
+    expect(delta.dx).toBe(13);
+    expect(delta.dy).toBe(13);
+  });
+
+  it('进入左/上边缘时反向滚动', () => {
+    const delta = autoScrollDelta({ pointerX: 10, pointerY: 8, ...rect });
+    expect(delta.dx).toBe(-13);
+    expect(delta.dy).toBe(-14);
+  });
+
+  it('拖出视口时按单帧上限滚动', () => {
+    expect(autoScrollDelta({ pointerX: 1200, pointerY: 900, ...rect })).toEqual({
+      dx: 30,
+      dy: 30,
+    });
+    expect(autoScrollDelta({ pointerX: -400, pointerY: -400, ...rect })).toEqual({
+      dx: -30,
+      dy: -30,
+    });
   });
 });
 

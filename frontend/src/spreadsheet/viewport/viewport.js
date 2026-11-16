@@ -67,6 +67,48 @@ export function computeViewport({
 }
 
 /**
+ * 计算拖拽选区靠近边缘时的自动滚动增量。
+ *
+ * 指针进入边缘阈值后开始滚动，越靠近外侧越快，单帧增量有上限。
+ *
+ * @param {object} params 参数
+ * @param {number} params.pointerX 指针 X
+ * @param {number} params.pointerY 指针 Y
+ * @param {number} params.left 视口左边界
+ * @param {number} params.top 视口上边界
+ * @param {number} params.right 视口右边界
+ * @param {number} params.bottom 视口下边界
+ * @param {number} [params.margin] 触发阈值
+ * @param {number} [params.maxStep] 单帧最大滚动量
+ * @returns {{ dx: number, dy: number }} 滚动增量
+ */
+export function autoScrollDelta({
+  pointerX,
+  pointerY,
+  left,
+  top,
+  right,
+  bottom,
+  margin = 28,
+  maxStep = 30,
+}) {
+  const axisDelta = (position, start, end) => {
+    if (position > end - margin) {
+      return Math.min(maxStep, Math.ceil((position - (end - margin)) / 2) + 4);
+    }
+    if (position < start + margin) {
+      return -Math.min(maxStep, Math.ceil((start + margin - position) / 2) + 4);
+    }
+    return 0;
+  };
+
+  return {
+    dx: axisDelta(pointerX, left, right),
+    dy: axisDelta(pointerY, top, bottom),
+  };
+}
+
+/**
  * 把滚动偏移限制在内容边界内。
  *
  * @param {number} scrollLeft 水平偏移
