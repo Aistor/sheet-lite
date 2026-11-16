@@ -148,6 +148,25 @@ describe('gridRenderer', () => {
     expect(ctx.texts.length).toBeLessThan(100);
   });
 
+  it('绘制选区填充与边框', () => {
+    const ctx = createFakeContext();
+    const stats = createGridRenderer().draw(ctx, {
+      layout,
+      viewport,
+      scrollLeft: 0,
+      scrollTop: 0,
+      activeCell: { row: 3, col: 2 },
+      selection: { startRow: 1, startCol: 1, endRow: 3, endCol: 2 },
+      getCell: () => undefined,
+      width: 848,
+      height: 624,
+    });
+
+    expect(stats.labels).toBeGreaterThan(0);
+    expect(ctx.calls.fillRect).toBeGreaterThan(1);
+    expect(ctx.calls.strokeRect).toBe(2);
+  });
+
   it('绘制非空单元格文本并跳过空输入', () => {
     const ctx = createFakeContext();
     const cells = new Map([

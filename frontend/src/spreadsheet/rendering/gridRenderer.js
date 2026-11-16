@@ -11,6 +11,8 @@ export const DEFAULT_GRID_THEME = Object.freeze({
   headerActiveBackground: '#e8efff',
   activeFill: 'rgba(37, 99, 235, 0.10)',
   activeBorder: '#2563eb',
+  selectionFill: 'rgba(37, 99, 235, 0.12)',
+  selectionBorder: '#2563eb',
   cellText: '#1f2329',
   font: '12px "Segoe UI", "PingFang SC", sans-serif',
   cellFont: '13px "Segoe UI", "PingFang SC", sans-serif',
@@ -39,6 +41,7 @@ export function createGridRenderer({ theme = {} } = {}) {
    * @param {number} params.scrollLeft 水平滚动偏移
    * @param {number} params.scrollTop 垂直滚动偏移
    * @param {{ row: number, col: number } | null} params.activeCell 活动单元格
+   * @param {{ startRow: number, startCol: number, endRow: number, endCol: number } | null} [params.selection] 选区范围
    * @param {(row: number, col: number) => object | undefined} [params.getCell] 单元格读取函数
    * @param {number} params.width 画布 CSS 宽度
    * @param {number} params.height 画布 CSS 高度
@@ -46,7 +49,7 @@ export function createGridRenderer({ theme = {} } = {}) {
    */
   function draw(
     ctx,
-    { layout, viewport, scrollLeft, scrollTop, activeCell, getCell, width, height },
+    { layout, viewport, scrollLeft, scrollTop, activeCell, selection, getCell, width, height },
   ) {
     const stats = { rows: 0, columns: 0, labels: 0, texts: 0 };
     const bodyLeft = layout.headerWidth;
@@ -64,6 +67,7 @@ export function createGridRenderer({ theme = {} } = {}) {
       scrollLeft,
       scrollTop,
       activeCell,
+      selection,
       bodyLeft,
       bodyTop,
       bodyWidth,
@@ -120,6 +124,7 @@ export function createGridRenderer({ theme = {} } = {}) {
       scrollLeft,
       scrollTop,
       activeCell,
+      selection,
       bodyLeft,
       bodyTop,
       bodyWidth,
@@ -134,7 +139,14 @@ export function createGridRenderer({ theme = {} } = {}) {
     ctx.rect(bodyLeft, bodyTop, bodyWidth, bodyHeight);
     ctx.clip();
 
-    if (activeCell) {
+    if (selection) {
+      const x = bodyLeft + layout.columnX(selection.startCol) - scrollLeft;
+      const y = bodyTop + layout.rowY(selection.startRow) - scrollTop;
+      const selectionWidth = (selection.endCol - selection.startCol + 1) * layout.columnWidth;
+      const selectionHeight = (selection.endRow - selection.startRow + 1) * layout.rowHeight;
+      ctx.fillStyle = currentTheme.selectionFill;
+      ctx.fillRect(x, y, selectionWidth, selectionHeight);
+    } else if (activeCell) {
       const x = bodyLeft + layout.columnX(activeCell.col) - scrollLeft;
       const y = bodyTop + layout.rowY(activeCell.row) - scrollTop;
       ctx.fillStyle = currentTheme.activeFill;
@@ -165,6 +177,16 @@ export function createGridRenderer({ theme = {} } = {}) {
       stats.columns += 1;
     }
     ctx.stroke();
+
+    if (selection) {
+      const x = bodyLeft + layout.columnX(selection.startCol) - scrollLeft;
+      const y = bodyTop + layout.rowY(selection.startRow) - scrollTop;
+      const selectionWidth = (selection.endCol - selection.startCol + 1) * layout.columnWidth;
+      const selectionHeight = (selection.endRow - selection.startRow + 1) * layout.rowHeight;
+      ctx.strokeStyle = currentTheme.selectionBorder;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x + 1, y + 1, selectionWidth - 2, selectionHeight - 2);
+    }
 
     if (activeCell) {
       const x = bodyLeft + layout.columnX(activeCell.col) - scrollLeft;

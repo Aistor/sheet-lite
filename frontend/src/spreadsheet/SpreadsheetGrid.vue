@@ -13,6 +13,7 @@
       @pointerdown="handlePointerDown"
       @dblclick="handleDoubleClick"
       @keydown="handleKeyDown"
+      @paste="handlePaste"
     >
       <div class="grid-spacer" :style="spacerStyle"></div>
     </div>
@@ -31,19 +32,27 @@
       @compositionend="handleCompositionEnd"
       @blur="commitEdit"
     />
+    <div v-if="notice" class="grid-notice">{{ notice }}</div>
   </div>
 </template>
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { toA1 } from '@/spreadsheet/core/coordinates.js';
-import { moveActiveCell } from '@/spreadsheet/core/selection.js';
+import {
+  createSelection,
+  extendSelection,
+  moveActiveCell,
+  selectionRange,
+} from '@/spreadsheet/core/selection.js';
 import { createGridLayout } from '@/spreadsheet/layout/gridLayout.js';
 import { cellScreenRect } from '@/spreadsheet/layout/editorRect.js';
 import { createGridRenderer } from '@/spreadsheet/rendering/gridRenderer.js';
 import { SparseCellStore } from '@/spreadsheet/store/sparseCellStore.js';
 import { createCommandManager } from '@/spreadsheet/commands/commandManager.js';
 import { createSetCellCommand } from '@/spreadsheet/commands/setCellCommand.js';
+import { createSetCellsBatchCommand } from '@/spreadsheet/commands/setCellsBatchCommand.js';
+import { parseTsv, serializeRangeToTsv } from '@/spreadsheet/clipboard/tsv.js';
 import { clampScroll, computeViewport, scrollToCell } from '@/spreadsheet/viewport/viewport.js';
 
 const props = defineProps({
@@ -63,9 +72,11 @@ const canvasRef = ref(null);
 const scrollerRef = ref(null);
 const editorRef = ref(null);
 
-const activeCell = ref({ row: 0, col: 0 });
+const selection = ref(createSelection({ row: 0, col: 0 }));
+const activeCell = computed(() => selection.value.focus);
 const editing = ref(null);
 const editorStyle = ref({});
+const notice = ref('');
 
 const cellStore = new SparseCellStore();
 const commandContext = { store: cellStore };
@@ -74,6 +85,8 @@ const renderer = createGridRenderer();
 
 let editorText = '';
 let composing = false;
+let dragging = false;
+let noticeTimer = 0;
 
 watch(
   activeCell,
@@ -105,6 +118,14 @@ const state = {
 
 let resizeObserver;
 let frameHandle = 0;
+
+function showNotice(message) {
+  notice.value = message;
+  window.clearTimeout(noticeTimer);
+  noticeTimer = window.setTimeout(() => {
+    notice.value = '';
+  }, 2400);
+}
 
 function refreshViewport() {
   state.viewport = computeViewport({
@@ -140,6 +161,7 @@ function drawFrame() {
     scrollLeft: state.scrollLeft,
     scrollTop: state.scrollTop,
     activeCell: activeCell.value,
+    selection: selectionRange(selection.value),
     getCell: (row, col) => cellStore.get(row, col),
     width: state.width,
     height: state.height,
@@ -202,17 +224,45 @@ function cellAt(clientX, clientY) {
 }
 
 function handlePointerDown(event) {
+  if (event.button !== 0) {
+    return;
+  }
   const scroller = scrollerRef.value;
   if (!scroller) {
     return;
   }
   scroller.focus({ preventScroll: true });
+  if (editing.value) {
+    commitEdit();
+  }
   const cell = cellAt(event.clientX, event.clientY);
   if (!cell) {
     return;
   }
-  activeCell.value = cell;
+  selection.value = event.shiftKey
+    ? extendSelection(selection.value, cell)
+    : createSelection(cell);
+  dragging = true;
+  window.addEventListener('pointermove', handlePointerMove);
+  window.addEventListener('pointerup', handlePointerUp, { once: true });
   scheduleDraw();
+}
+
+function handlePointerMove(event) {
+  if (!dragging) {
+    return;
+  }
+  const cell = cellAt(event.clientX, event.clientY);
+  if (!cell) {
+    return;
+  }
+  selection.value = extendSelection(selection.value, cell);
+  scheduleDraw();
+}
+
+function handlePointerUp() {
+  dragging = false;
+  window.removeEventListener('pointermove', handlePointerMove);
 }
 
 function handleDoubleClick(event) {
@@ -220,7 +270,7 @@ function handleDoubleClick(event) {
   if (!cell) {
     return;
   }
-  activeCell.value = cell;
+  selection.value = createSelection(cell);
   startEdit(cell.row, cell.col);
 }
 
@@ -252,6 +302,7 @@ function positionEditor() {
 function startEdit(row, col, initialValue) {
   const existing = cellStore.get(row, col)?.rawInput ?? '';
   editorText = initialValue ?? existing;
+  selection.value = createSelection({ row, col });
   editing.value = { row, col, initialValue: editorText };
   positionEditor();
   scheduleDraw();
@@ -327,11 +378,10 @@ function handleCompositionEnd() {
   composing = false;
 }
 
-function moveActive(deltaRow, deltaCol) {
-  activeCell.value = moveActiveCell(activeCell.value, deltaRow, deltaCol, layout);
+function ensureVisible(cell) {
   const target = scrollToCell({
-    row: activeCell.value.row,
-    col: activeCell.value.col,
+    row: cell.row,
+    col: cell.col,
     scrollLeft: state.scrollLeft,
     scrollTop: state.scrollTop,
     layout,
@@ -339,18 +389,117 @@ function moveActive(deltaRow, deltaCol) {
     viewportHeight: state.height,
   });
   syncScroll(target.scrollLeft, target.scrollTop);
+}
+
+function moveActive(deltaRow, deltaCol, extend = false) {
+  const next = moveActiveCell(activeCell.value, deltaRow, deltaCol, layout);
+  selection.value = extend ? extendSelection(selection.value, next) : createSelection(next);
+  ensureVisible(next);
   scheduleDraw();
 }
 
-function clearActiveCell() {
-  const { row, col } = activeCell.value;
-  if (!cellStore.has(row, col)) {
+function copySelection() {
+  const range = selectionRange(selection.value);
+  const text = serializeRangeToTsv({
+    range,
+    getCell: (row, col) => cellStore.get(row, col),
+  });
+  const rows = range.endRow - range.startRow + 1;
+  const columns = range.endCol - range.startCol + 1;
+  navigator.clipboard
+    .writeText(text)
+    .then(() => showNotice(`已复制 ${rows} 行 × ${columns} 列`))
+    .catch(() => showNotice('复制失败：浏览器拒绝剪贴板访问'));
+}
+
+function handlePaste(event) {
+  const text = event.clipboardData?.getData('text/plain') ?? '';
+  if (text === '') {
     return;
   }
-  commands.execute(createSetCellCommand({ row, col, input: '' }), commandContext);
+  event.preventDefault();
+  let rows;
+  try {
+    rows = parseTsv(text);
+  } catch (error) {
+    showNotice(
+      error instanceof RangeError ? '粘贴内容超出单次限制（10 万单元格 / 5 MB）' : '粘贴内容格式无法解析',
+    );
+    return;
+  }
+  if (rows.length === 0) {
+    return;
+  }
+  const columnCount = Math.max(...rows.map((fields) => fields.length));
+  const { row, col } = activeCell.value;
+  if (row + rows.length > layout.rowCount || col + columnCount > layout.columnCount) {
+    showNotice('粘贴范围超出工作表边界');
+    return;
+  }
+
+  const cells = [];
+  rows.forEach((fields, rowOffset) => {
+    fields.forEach((input, colOffset) => {
+      cells.push({ row: row + rowOffset, col: col + colOffset, input });
+    });
+  });
+  commands.execute(createSetCellsBatchCommand({ cells }), commandContext);
+  selection.value = {
+    anchor: { row, col },
+    focus: {
+      row: row + rows.length - 1,
+      col: col + columnCount - 1,
+    },
+  };
+  scheduleDraw();
+  showNotice(`已粘贴 ${rows.length} 行 × ${columnCount} 列`);
+}
+
+function clearSelection() {
+  const range = selectionRange(selection.value);
+  const cells = [];
+  for (const { row, col } of cellStore.entriesInRange(range)) {
+    cells.push({ row, col, input: '' });
+  }
+  if (cells.length === 0) {
+    return;
+  }
+  commands.execute(createSetCellsBatchCommand({ cells }), commandContext);
+}
+
+function undo() {
+  if (commands.undo(commandContext)) {
+    scheduleDraw();
+  }
+}
+
+function redo() {
+  if (commands.redo(commandContext)) {
+    scheduleDraw();
+  }
 }
 
 function handleKeyDown(event) {
+  const modifier = event.ctrlKey || event.metaKey;
+  if (modifier && event.key.toLowerCase() === 'c') {
+    event.preventDefault();
+    copySelection();
+    return;
+  }
+  if (modifier && event.key.toLowerCase() === 'z') {
+    event.preventDefault();
+    if (event.shiftKey) {
+      redo();
+    } else {
+      undo();
+    }
+    return;
+  }
+  if (modifier && event.key.toLowerCase() === 'y') {
+    event.preventDefault();
+    redo();
+    return;
+  }
   if (event.key === 'Enter' || event.key === 'F2') {
     event.preventDefault();
     startEdit(activeCell.value.row, activeCell.value.col);
@@ -358,7 +507,7 @@ function handleKeyDown(event) {
   }
   if (event.key === 'Delete' || event.key === 'Backspace') {
     event.preventDefault();
-    clearActiveCell();
+    clearSelection();
     return;
   }
   if (event.key === 'Tab') {
@@ -374,10 +523,10 @@ function handleKeyDown(event) {
   }[event.key];
   if (delta) {
     event.preventDefault();
-    moveActive(delta[0], delta[1]);
+    moveActive(delta[0], delta[1], event.shiftKey);
     return;
   }
-  if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
+  if (event.key.length === 1 && !modifier && !event.altKey) {
     event.preventDefault();
     startEdit(activeCell.value.row, activeCell.value.col, event.key);
   }
@@ -412,6 +561,8 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   resizeObserver?.disconnect();
+  window.clearTimeout(noticeTimer);
+  window.removeEventListener('pointermove', handlePointerMove);
   if (frameHandle !== 0) {
     window.cancelAnimationFrame(frameHandle);
     frameHandle = 0;
@@ -466,5 +617,19 @@ onBeforeUnmount(() => {
   font-family: 'Segoe UI', 'PingFang SC', sans-serif;
   font-size: 13px;
   line-height: normal;
+}
+
+.grid-notice {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  z-index: 4;
+  padding: 6px 14px;
+  border-radius: 6px;
+  background-color: rgba(31, 35, 41, 0.86);
+  color: #ffffff;
+  font-size: 12px;
+  transform: translateX(-50%);
+  pointer-events: none;
 }
 </style>

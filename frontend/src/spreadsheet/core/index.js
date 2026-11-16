@@ -11,7 +11,14 @@ export {
 
 export { CellValueType, cellDisplayText, createTextCell, isEmptyInput } from './cell.js';
 
-export { clampCell, moveActiveCell } from './selection.js';
+export {
+  clampCell,
+  createSelection,
+  extendSelection,
+  isSingleCellSelection,
+  moveActiveCell,
+  selectionRange,
+} from './selection.js';
 
 export {
   clampRangeToSheet,

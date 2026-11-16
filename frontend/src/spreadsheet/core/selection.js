@@ -1,5 +1,7 @@
 /**
- * 活动单元格与选区的纯函数，不依赖 DOM 或框架。
+ * 活动单元格与区域选择的纯函数，不依赖 DOM 或框架。
+ *
+ * 选区用 anchor（起点）和 focus（当前焦点）表示，实际范围由两者规范化得到。
  */
 
 /**
@@ -31,5 +33,57 @@ export function moveActiveCell(activeCell, deltaRow, deltaCol, bounds) {
   return clampCell(
     { row: activeCell.row + deltaRow, col: activeCell.col + deltaCol },
     bounds,
+  );
+}
+
+/**
+ * 创建只包含一个单元格的选区。
+ *
+ * @param {{ row: number, col: number }} cell 单元格
+ * @returns {{ anchor: { row: number, col: number }, focus: { row: number, col: number } }} 选区
+ */
+export function createSelection(cell) {
+  const point = { row: cell.row, col: cell.col };
+  return { anchor: { ...point }, focus: { ...point } };
+}
+
+/**
+ * 保持锚点，移动焦点（Shift+点击或 Shift+方向键）。
+ *
+ * @param {{ anchor: { row: number, col: number }, focus: { row: number, col: number } }} selection 选区
+ * @param {{ row: number, col: number }} cell 新焦点
+ * @returns {{ anchor: { row: number, col: number }, focus: { row: number, col: number } }} 选区
+ */
+export function extendSelection(selection, cell) {
+  return {
+    anchor: { ...selection.anchor },
+    focus: { row: cell.row, col: cell.col },
+  };
+}
+
+/**
+ * 把选区规范化为矩形范围。
+ *
+ * @param {{ anchor: { row: number, col: number }, focus: { row: number, col: number } }} selection 选区
+ * @returns {{ startRow: number, startCol: number, endRow: number, endCol: number }} 区域
+ */
+export function selectionRange(selection) {
+  return {
+    startRow: Math.min(selection.anchor.row, selection.focus.row),
+    startCol: Math.min(selection.anchor.col, selection.focus.col),
+    endRow: Math.max(selection.anchor.row, selection.focus.row),
+    endCol: Math.max(selection.anchor.col, selection.focus.col),
+  };
+}
+
+/**
+ * 判断选区是否只覆盖一个单元格。
+ *
+ * @param {{ anchor: { row: number, col: number }, focus: { row: number, col: number } }} selection 选区
+ * @returns {boolean} 是否单格
+ */
+export function isSingleCellSelection(selection) {
+  return (
+    selection.anchor.row === selection.focus.row && selection.anchor.col === selection.focus.col
   );
 }
