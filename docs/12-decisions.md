@@ -20,7 +20,9 @@
 | 前端包管理 | Yarn Classic 1.22.22，提交 `yarn.lock`，使用冻结锁文件安装 | ADR-008 |
 | 开发环境 | 不采用 Docker / Docker Compose | ADR-009 |
 | 数据库管理 | 个人开发阶段由 AI 助手管理本地数据库；不使用迁移框架、版本登记表或迁移执行器 | ADR-010 |
-| 应用外壳 | 工具栏/编辑栏通过网格显式 API 交互；地址移入编辑栏；图标 `@vicons` 按需引入；页头使用 icon-only mark，原动画 logo 用于启动动画 | ADR-012 |
+| 应用外壳 | 工具栏/编辑栏通过网格显式 API 交互；地址移入编辑栏；图标 `@vicons` 按需引入；页头使用 icon-only mark；启动动画非阻塞 | ADR-012 |
+| 写操作幂等 | 同一事务内先鉴权、再查 `operationId` 并比对请求内容，最后校验 `baseRevision` | ADR-013 |
+| 工作簿所有权 | `sl_workbook.owner_id` 是唯一所有权来源；成员表只存 EDITOR/VIEWER | ADR-014 |
 
 ---
 
@@ -115,7 +117,7 @@
 
 ## ADR-012：应用外壳与表格内核的交互契约
 
-- 状态：已决定（方案，待实施）
+- 状态：已决定（UI-1 已实施）
 - 背景：新增分组工具栏、编辑栏与品牌资源后，外壳组件需要稳定的数据与命令入口；若页面直接读写 Store，会绕过命令层并产生第二份活动单元格状态。
 - 决策：
   - `AppHeader`、`FormatToolbar`、`FormulaBar` 放在 `frontend/src/components/`，只由 `pages/EditorPage.vue` 组合，不直接访问 `SparseCellStore`、`SparseStyleStore` 或命令管理器。
@@ -127,3 +129,23 @@
 - 代价：`SpreadsheetGrid` 的公开面扩大，需要维护事件负载兼容；编辑栏与内联编辑需要约定互斥的提交顺序。
 - 复审条件：引入多工作表标签、多行公式编辑器、协同编辑或移动端布局时，重新评估外壳与内核的边界。
 - 关联规格：[13 应用外壳](13-ui-shell.md)。
+
+
+## ADR-013：写操作幂等重放优先于 revision 冲突校验
+
+- 状态：已决定
+- 背景：写请求可能在服务端成功提交后因网络问题丢失响应。客户端使用原 `operationId`、`baseRevision` 重试时，工作簿 revision 已推进；若先校验 `baseRevision`，合法重试会被错误返回为 revision 冲突。
+- 决策：在同一事务中锁定工作簿并完成身份、资源状态和写权限校验后，先查询 `(workbook_id, operation_id)`。若记录存在，比较规范化请求内容：一致则返回原 revision 和 `duplicate=true`；不一致则返回 `OPERATION_ID_REUSED`。只有记录不存在时才校验 `baseRevision` 并执行新写入。
+- 安全约束：权限检查先于幂等结果返回，避免权限已撤销的调用者通过重放读取操作结果。
+- 并发约束：同一工作簿的写事务先锁工作簿行；并发相同 operationId 请求串行化，后到请求应读取先到事务提交的日志记录。
+- 影响：操作日志必须保存足以比较请求一致性的规范化内容；若未来引入独立请求摘要列，需核对实际 DDL 并同步 V001 初始结构基线。重放响应只承诺已持久化的 revision 和重复标志，不承诺未保存的完整响应体。
+- 关联文档：[05 数据库与 MyBatis-Plus](05-database-mybatis-plus.md)、[08 API 与版本控制](08-api.md)。
+
+## ADR-014：工作簿所有权以 owner_id 为唯一权威来源
+
+- 状态：已决定
+- 背景：`sl_workbook.owner_id` 与成员表中的 `OWNER` 记录若同时作为权限来源，可能因数据不一致而产生权限并集，导致已转移或已撤销的所有者身份继续生效。
+- 决策：`sl_workbook.owner_id` 是唯一所有权事实来源；所有者权限由该字段派生。`sl_workbook_member` 只保存非所有者成员的 `EDITOR` / `VIEWER` 共享权限，应用不得写入或依赖 `OWNER` 成员记录。
+- 所有权转移：必须在同一事务中更新 `owner_id` 和相关成员记录；原所有者转移后的角色必须由请求明确指定。
+- 兼容约束：若当前物理表仍允许 `OWNER` 值，应用层仍不得使用；是否收紧数据库 CHECK/枚举需先检查真实 DDL，再更新初始结构基线。
+- 关联文档：[05 数据库与 MyBatis-Plus](05-database-mybatis-plus.md)。

@@ -113,7 +113,7 @@ backend/src/main/resources/db/migration/V001__init_schema.sql
 | --- | --- | --- | --- |
 | `sl_workbook` | 工作簿元数据与 revision | PK `id` | `(owner_id, deleted, updated_at)` |
 | `sl_worksheet` | 工作表元数据 | PK `id`；UK `(workbook_id, name)` | `(workbook_id, sort_order)`；行列上限与冻结校验 |
-| `sl_workbook_member` | 工作簿 ACL | PK `(workbook_id, user_id)` | `(user_id, workbook_id)`；角色枚举 |
+| `sl_workbook_member` | 非所有者成员 ACL（EDITOR / VIEWER） | PK `(workbook_id, user_id)` | `(user_id, workbook_id)`；应用层不写入 OWNER |
 | `sl_style` | 规范化样式 | PK `id`；UK `(workbook_id, style_hash)` | `style_hash` SHA-256；`style_version` |
 | `sl_cell` | 稀疏单元格 | PK `(worksheet_id, row_index, column_index)` | 聚簇主键即范围查询索引；值类型/长度校验 |
 | `sl_row_dimension` | 行高/隐藏覆盖 | PK `(worksheet_id, row_index)` | 行高范围、隐藏枚举 |
@@ -151,8 +151,10 @@ backend/src/main/resources/db/migration/V001__init_schema.sql
 ### 5.3 `sl_workbook_member`
 
 - 复合主键 `(workbook_id, user_id)`。
-- `role`：`OWNER` / `EDITOR` / `VIEWER`。
-- `owner_id` 与成员表中的 `OWNER` 行存在冗余：`owner_id` 是鉴权快速路径，成员表是可扩展 ACL。应用必须定义二者的一致性规则，建议鉴权时取并集，并在转移所有权时同步更新两处。
+- `owner_id` 是工作簿所有权的唯一权威来源；所有者权限由 `sl_workbook.owner_id` 派生，不依赖成员表中的冗余 `OWNER` 行。
+- `sl_workbook_member` 只保存非所有者成员的共享权限，应用层角色为 `EDITOR` / `VIEWER`。即使当前物理表的枚举或 CHECK 仍允许 `OWNER`，应用也不得写入或依赖该值；若要收紧数据库约束，须先核对 `SHOW CREATE TABLE`，再单独更新结构基线。
+- 鉴权时先判断 `owner_id`，再查询成员表；不得把两处记录简单取并集，也不得因成员表残留 `OWNER` 记录授予所有者权限。
+- 转移所有权必须在同一事务中更新 `sl_workbook.owner_id` 与相关成员记录；原所有者转移后的角色必须由请求明确指定，不能隐式推断。
 - 索引 `(user_id, workbook_id)` 支持“某用户可访问的工作簿”查询。
 
 ### 5.4 `sl_style`
@@ -232,7 +234,7 @@ backend/src/main/resources/db/migration/V001__init_schema.sql
 - `CHECK (revision = base_revision + 1)`：一次成功请求只推进一个 revision。
 - 索引 `(workbook_id, created_at)` 用于按工作簿审计；`(created_at)` 用于保留期清理。
 
-幂等重放：如果 `(workbook_id, operation_id)` 已存在，直接返回已记录的 `revision`，标记为重复请求，不再次修改单元格。日志没有保存完整响应体；如果客户端需要具体单元格结果，应重新读取或由 API 定义为“返回 revision + duplicate 标志”。
+幂等重放：如果 `(workbook_id, operation_id)` 已存在，必须先验证本次请求与首次成功请求的规范化内容一致；一致时返回已记录的 `revision` 并标记 `duplicate=true`，不得再次修改数据。不一致时返回稳定错误 `OPERATION_ID_REUSED`，不得把不同请求误判为成功重放。当前日志保存 `payload`，应用应对 `operation_type`、`worksheet_id` 和规范化后的操作内容进行一致性比较；如后续增加独立 SHA-256 `request_hash` 列，须先核对实际 DDL 并同步更新 V001 基线。日志没有保存完整响应体，因此重放响应限定为原 `revision` 与重复标志；需要单元格结果时客户端重新读取。
 
 ### 5.9 `sl_snapshot`
 
@@ -315,13 +317,20 @@ ORDER BY row_index, column_index;
 
 推荐顺序（同一数据库事务）：
 
-1. `SELECT id, revision, owner_id, deleted FROM sl_workbook WHERE id = ? FOR UPDATE;`
-2. 校验权限、删除状态和 `baseRevision`；不一致返回 409 `REVISION_CONFLICT`。
-3. 查询 `sl_operation_log` 的 `(workbook_id, operation_id)`；已存在则回放，不重复写入。
-4. 按主键排序后批量 upsert/删除 `sl_cell`，再处理尺寸、合并、样式。
-5. 插入 `sl_operation_log`，`revision = base_revision + 1`。
-6. `UPDATE sl_workbook SET revision = revision + 1 WHERE id = ? AND revision = ? AND deleted = 0;`
-7. 受影响行数为 0 时回滚并返回冲突；否则提交。
+1. `SELECT id, revision, owner_id, deleted FROM sl_workbook WHERE id = ? FOR UPDATE;`；不存在或已删除时按资源不存在处理。
+2. 校验当前请求身份及工作簿写权限。权限校验必须发生在幂等重放之前，避免已失去权限的调用者通过重试读取操作结果。
+3. 查询 `sl_operation_log` 的 `(workbook_id, operation_id)`：
+   - 已存在且规范化请求内容一致：返回已记录的 `revision`、`duplicate=true`，不再执行写入；
+   - 已存在但请求内容不一致：返回 `OPERATION_ID_REUSED`，不执行写入；
+   - 不存在：继续下一步。
+4. 校验 `baseRevision` 与当前 revision；不一致返回 409 `REVISION_CONFLICT`。**幂等记录查询必须先于 revision 校验**，否则首次请求成功但响应丢失时，客户端用相同 `operationId` 重试会被错误地判为 revision 冲突。
+5. 校验操作参数、坐标范围、批量上限、样式引用和合并区域等业务规则。
+6. 按主键排序后批量 upsert/删除 `sl_cell`，再处理尺寸、合并、样式。
+7. 插入 `sl_operation_log`，`revision = base_revision + 1`，并保存可用于请求一致性比较的规范化操作内容。
+8. `UPDATE sl_workbook SET revision = revision + 1 WHERE id = ? AND revision = ? AND deleted = 0;`
+9. 受影响行数为 0 时回滚并返回冲突；否则提交。
+
+工作簿行锁使同一工作簿的写请求串行化，也使并发的相同 `operationId` 请求在后到事务获得锁后能够查到先到事务提交的幂等记录。死锁或超时重试必须沿用原 `operationId` 和完全相同的请求内容。
 
 对工作簿行加锁会把同一工作簿的写请求串行化。首期这是可接受的简单正确性方案；如果压测显示吞吐不足，再评估按工作表/块拆分锁或乐观重试，但不能牺牲 revision 的单调性。
 
@@ -391,8 +400,10 @@ WHERE worksheet_id = ?
 - 一次成功写请求推进 1；读请求不推进。
 - 客户端提交 `baseRevision`；服务端不匹配时返回 409，不静默覆盖。
 - `operationId` 是幂等键：网络超时后客户端可以用同一 `operationId` 重试。
-- 幂等检查与写入必须在同一事务内完成；先查后写但不在事务内，会出现竞态。
+- 幂等检查与写入必须在同一事务内完成；在持有工作簿行锁、完成资源权限校验后，先检查 `operationId`，再校验 `baseRevision`。
+- 同一 `operationId` 只能代表完全相同的规范化请求；请求内容不同必须拒绝，不能返回旧请求的成功结果。
 - `(workbook_id, revision)` 唯一约束是最后防线：即使应用逻辑漏判，也不会产生两个相同 revision 的成功日志。
+- 幂等重放只返回日志可证明的结果（`revision`、`duplicate`）；不要伪造未持久化的原始响应体。
 - 首期单用户也保留这套语义，避免多人协作时推翻重来。
 - 未来协作阶段再评估块级/区域级冲突、CRDT 或操作转换；当前不引入。
 
@@ -469,7 +480,7 @@ int deleteRange(@Param("worksheetId") long worksheetId,
 - 开发阶段由 AI 助手负责建表、改表、补开发数据和结构核对；Navicat 用于查看、导出和应急操作。
 - 任何删除操作（DROP/TRUNCATE/DELETE、DROP COLUMN/INDEX 等）必须先取得 Aistor 明确授权；执行前打印目标并确认备份可恢复。
 - 不引入 Flyway/Liquibase，不使用 schema 版本登记表、迁移校验和或迁移执行器；`schema_version` 表已彻底移除，不保留兼容表、视图或业务代码引用。
-- `V001__init_schema.sql` 仅作为初始数据库结构基线，不承担日常迁移职责；`db-migrate.*` 仅作历史参考。
+- `V001__init_schema.sql` 仅作为初始数据库结构基线，不承担日常迁移职责。当前项目不提供、不执行 `db-migrate.sh` / `db-migrate.ps1`；若历史版本中存在同名脚本，仅属于历史资料，不得作为当前流程恢复或执行。
 - 所有 schema 变更必须可恢复：先备份，再修改；变更后核对表、列、索引、COMMENT。
 - 变更后同步本文与结构基线，不要让文档和数据库长期漂移。
 - 已执行过的 `V001` 不再重跑；它只用于空库重建的初始参考。
@@ -483,7 +494,7 @@ int deleteRange(@Param("worksheetId") long worksheetId,
 5. 留痕：在本文或 `docs/db-changelog.md` 记录日期、表、变更、备份文件；建议同步结构快照。
 6. 恢复演练：定期把备份恢复到临时库，确认可用。
 
-`db-migrate.sh` / `db-migrate.ps1` 保留但不在日常流程中使用；需要时仅作历史参考。
+当前仓库不保留 `db-migrate.sh` / `db-migrate.ps1`，也不使用迁移执行器。若旧分支或历史归档中存在同名文件，不得将其视为当前项目工具。
 
 ### 10.3 备份与恢复
 
@@ -520,7 +531,7 @@ CREATE DATABASE sheet_lite
 - 备份文件可恢复。
 - 删除类变更已取得 Aistor 授权。
 - 文档与当前结构一致。
-- 不要求 CI 迁移检查；如保留 `db-migrate.*`，仅作历史参考。
+- 不要求 CI 迁移检查；当前仓库不提供 `db-migrate.*` 脚本。
 
 ### 10.6 日常运维
 
@@ -533,7 +544,7 @@ CREATE DATABASE sheet_lite
 
 - 当前初始结构基线 `V001__init_schema.sql` 定义 11 张业务表，不包含 `schema_version`；DDL 中所有表和列带中文 `COMMENT`，重建后按 §10.5 清单核验。
 - 开发阶段数据库由 AI 助手接手管理，可用 Navicat 或命令行；删除操作需 Aistor 授权。不使用 `schema_version`、schema 校验和、迁移执行器或 CI 迁移检查。
-- `V001__init_schema.sql` 保留为 11 张业务表的初始结构基线；`db-migrate.sh` / `db-migrate.ps1` 仅作历史参考，不在日常流程中使用。
+- `V001__init_schema.sql` 保留为 11 张业务表的初始结构基线；当前仓库不提供 `db-migrate.sh` / `db-migrate.ps1`，不使用迁移执行器。
 
 后续关注：
 

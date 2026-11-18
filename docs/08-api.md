@@ -4,7 +4,9 @@
 
 - 基础路径：`/api`
 - JSON 使用 UTF-8。
-- 坐标统一使用 0-based 行列索引，范围使用明确的 inclusive/exclusive 规则。
+- 单元格坐标统一使用 0-based 行列索引；所有矩形范围统一使用半开区间 `[start, end)`：包含起点、不包含终点。禁止在不同 API 中混用 inclusive 与 exclusive。
+- 单元格点坐标字段 `row` / `col` 表示单个坐标，不是范围；范围字段统一使用 `startRow` / `endRow` / `startCol` / `endCol`，其中 `end*` 均为开区间边界。
+- 范围必须满足 `0 <= start < end <= rowLimit/columnLimit`；单元格坐标必须满足 `0 <= row < rowLimit`、`0 <= col < columnLimit`。前端 A1 等人类可读地址如采用闭区间表达，必须在 API 边界转换为半开区间。
 - 写接口携带幂等 `operationId`。
 - 需要并发控制的请求携带 `baseRevision`。
 - 所有接口执行身份认证和资源级权限校验。
@@ -34,7 +36,7 @@
 请求示意：
 
 ```http
-GET /api/workbooks/100/worksheets/200/chunks?startRow=0&endRow=127&startCol=0&endCol=31
+GET /api/workbooks/100/worksheets/200/chunks?startRow=0&endRow=128&startCol=0&endCol=32
 ```
 
 建议响应只包含有内容/样式的单元格和必要的尺寸覆盖项：
@@ -46,9 +48,9 @@ GET /api/workbooks/100/worksheets/200/chunks?startRow=0&endRow=127&startCol=0&en
   "revision": 12,
   "range": {
     "startRow": 0,
-    "endRow": 127,
+    "endRow": 128,
     "startCol": 0,
-    "endCol": 31
+    "endCol": 32
   },
   "cells": [
     {
@@ -62,7 +64,7 @@ GET /api/workbooks/100/worksheets/200/chunks?startRow=0&endRow=127&startCol=0&en
 }
 ```
 
-上例采用半开区间 `[startRow, endRow)`、`[startCol, endCol)`。请在所有 API 中保持一致。
+上例采用半开区间 `[startRow, endRow)`、`[startCol, endCol)`，表示读取第 0～127 行、第 0～31 列。请在所有 API、数据库查询和前端/后端适配层保持一致；SQL 不得使用两端包含的 `BETWEEN` 表达半开范围。
 
 ## 4. 操作提交
 
@@ -96,7 +98,28 @@ GET /api/workbooks/100/worksheets/200/chunks?startRow=0&endRow=127&startCol=0&en
 }
 ```
 
-如果 revision 冲突，返回 HTTP 409 和稳定错误码 `REVISION_CONFLICT`，附带当前 revision；客户端不能静默覆盖。幂等键必须有存储/去重策略，避免网络重试导致重复应用。
+如果 revision 冲突，返回 HTTP 409 和稳定错误码 `REVISION_CONFLICT`，附带当前 revision；客户端不能静默覆盖。
+
+幂等处理约定：
+
+1. 服务端先校验工作簿存在、未删除及当前用户写权限。
+2. 在同一事务中查询 `(workbookId, operationId)`，并比较首次请求与重试请求的规范化内容。
+3. 内容一致时返回首次成功的 `revision` 和 `duplicate: true`，不得再次应用操作；内容不一致时返回 HTTP 409、错误码 `OPERATION_ID_REUSED`。
+4. 只有该 `operationId` 尚不存在时，才校验 `baseRevision` 并执行新操作。
+5. 客户端超时重试必须沿用原 `operationId`、`baseRevision` 和完全相同的 `operations`；修改请求内容必须生成新的 `operationId`。
+
+幂等重放示意响应：
+
+```json
+{
+  "operationId": "client-generated-unique-id",
+  "revision": 13,
+  "accepted": true,
+  "duplicate": true
+}
+```
+
+当前操作日志不保存完整响应体，因此 API 只承诺返回已记录的 revision 与重复标志；需要单元格最新内容时重新读取。`OPERATION_ID_REUSED` 是本契约新增的错误码，后端实现时须同步加入 `ErrorCode.java` 和测试。
 
 ## 5. 统一错误格式
 
@@ -116,7 +139,8 @@ GET /api/workbooks/100/worksheets/200/chunks?startRow=0&endRow=127&startCol=0&en
 当前已实现的错误码以 `backend/src/main/java/com/sheetlite/common/response/ErrorCode.java` 为唯一来源：
 
 - 成功响应 `code` 固定为 `OK`。
-- 错误码：`VALIDATION_ERROR`、`RESOURCE_NOT_FOUND`、`METHOD_NOT_ALLOWED`、`WORKBOOK_NOT_FOUND`、`FORBIDDEN`、`REVISION_CONFLICT`、`RANGE_TOO_LARGE`、`UNSUPPORTED_OPERATION`、`INTERNAL_ERROR`。
+- 当前已实现错误码：`VALIDATION_ERROR`、`RESOURCE_NOT_FOUND`、`METHOD_NOT_ALLOWED`、`WORKBOOK_NOT_FOUND`、`FORBIDDEN`、`REVISION_CONFLICT`、`RANGE_TOO_LARGE`、`UNSUPPORTED_OPERATION`、`INTERNAL_ERROR`。
+- 待实现新增错误码：`OPERATION_ID_REUSED`（同一工作簿内重复使用 `operationId`，但请求内容与首次成功请求不一致）。在后端实现该契约时，同步更新 `ErrorCode.java`、统一异常响应和自动化测试。
 - `details` 在字段校验错误时是 `{ field, message }` 数组；其他错误可使用结构化对象（如 `{ "currentRevision": 13 }`）。
 
 ## 6. 分页与批量限制
