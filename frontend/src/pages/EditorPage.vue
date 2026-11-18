@@ -1,110 +1,32 @@
 <template>
   <n-config-provider :theme-overrides="themeOverrides">
     <div class="editor-shell">
-      <header class="editor-header">
-        <span class="brand">Sheet Lite</span>
-        <n-tag size="small" type="info" round>阶段 1 · 空白网格</n-tag>
-        <span class="address">{{ activeAddress }}</span>
-        <span class="hint">点击单元格激活，方向键移动</span>
-      </header>
+      <AppHeader />
 
-      <div class="editor-toolbar">
-        <n-button-group size="small">
-          <n-button
-            :type="activeStyle.bold ? 'primary' : 'default'"
-            title="加粗"
-            @click="toggleBold"
-          >
-            <n-icon><FormatBoldOutlined /></n-icon>
-          </n-button>
-          <n-button
-            :type="activeStyle.italic ? 'primary' : 'default'"
-            title="斜体"
-            @click="toggleItalic"
-          >
-            <n-icon><FormatItalicOutlined /></n-icon>
-          </n-button>
-        </n-button-group>
+      <FormatToolbar
+        :active-style="activeStyle"
+        :can-undo="canUndo"
+        :can-redo="canRedo"
+        @action="handleToolbarAction"
+      />
 
-        <n-divider vertical />
-
-        <n-button-group size="small">
-          <n-button
-            :type="activeStyle.align === 'left' ? 'primary' : 'default'"
-            title="左对齐"
-            @click="setAlign('left')"
-          >
-            <n-icon><FormatAlignLeftOutlined /></n-icon>
-          </n-button>
-          <n-button
-            :type="activeStyle.align === 'center' ? 'primary' : 'default'"
-            title="居中"
-            @click="setAlign('center')"
-          >
-            <n-icon><FormatAlignCenterOutlined /></n-icon>
-          </n-button>
-          <n-button
-            :type="activeStyle.align === 'right' ? 'primary' : 'default'"
-            title="右对齐"
-            @click="setAlign('right')"
-          >
-            <n-icon><FormatAlignRightOutlined /></n-icon>
-          </n-button>
-        </n-button-group>
-
-        <n-select
-          class="format-select"
-          size="small"
-          :value="activeStyle.numberFormat"
-          :options="formatOptions"
-          @update:value="applyFormat"
-        />
-
-        <span class="toolbar-label">文字</span>
-        <button
-          v-for="color in textColors"
-          :key="`text-${color}`"
-          class="swatch"
-          :style="{ backgroundColor: color }"
-          :title="color"
-          @click="applyTextColor(color)"
-        />
-
-        <span class="toolbar-label">填充</span>
-        <button
-          v-for="color in fillColors"
-          :key="`fill-${color.label}`"
-          class="swatch"
-          :style="{ backgroundColor: color.value ?? '#ffffff' }"
-          :title="color.label"
-          @click="applyFillColor(color.value)"
-        >
-          <span v-if="color.value === null" class="swatch-none">/</span>
-        </button>
-
-        <n-divider vertical />
-
-        <n-button-group size="small">
-          <n-button @click="applyBorder('all')">全部边框</n-button>
-          <n-button @click="applyBorder('outer')">外框</n-button>
-          <n-button @click="applyBorder('none')">无边框</n-button>
-        </n-button-group>
-
-        <n-divider vertical />
-
-        <n-button-group size="small">
-          <n-button @click="hideRows">隐藏行</n-button>
-          <n-button @click="hideCols">隐藏列</n-button>
-          <n-button @click="showRows">显示行</n-button>
-          <n-button @click="showCols">显示列</n-button>
-        </n-button-group>
-      </div>
+      <FormulaBar
+        :address="activeInfo?.address ?? 'A1'"
+        :value="formulaValue"
+        :editable="activeInfo?.editable ?? false"
+        :placeholder="formulaPlaceholder"
+        @focus="handleFormulaFocus"
+        @input="handleFormulaInput"
+        @commit="handleFormulaCommit"
+        @cancel="handleFormulaCancel"
+      />
 
       <main class="editor-content">
         <SpreadsheetGrid
           ref="gridRef"
-          @active-change="activeAddress = $event"
+          @active-change="handleActiveChange"
           @active-style-change="handleStyleChange"
+          @history-change="handleHistoryChange"
         />
       </main>
     </div>
@@ -112,27 +34,15 @@
 </template>
 
 <script setup>
-import { ref } from 'vue';
-import {
-  NButton,
-  NButtonGroup,
-  NConfigProvider,
-  NDivider,
-  NIcon,
-  NSelect,
-  NTag,
-} from 'naive-ui';
-import {
-  FormatAlignCenterOutlined,
-  FormatAlignLeftOutlined,
-  FormatAlignRightOutlined,
-  FormatBoldOutlined,
-  FormatItalicOutlined,
-} from '@vicons/material';
+import { computed, ref } from 'vue';
+import { NConfigProvider } from 'naive-ui';
+import AppHeader from '@/components/AppHeader.vue';
+import FormatToolbar from '@/components/FormatToolbar.vue';
+import FormulaBar from '@/components/FormulaBar.vue';
 import SpreadsheetGrid from '@/spreadsheet/SpreadsheetGrid.vue';
 
 const gridRef = ref(null);
-const activeAddress = ref('A1');
+const activeInfo = ref(null);
 const activeStyle = ref({
   bold: false,
   italic: false,
@@ -141,23 +51,10 @@ const activeStyle = ref({
   backgroundColor: null,
   numberFormat: 'general',
 });
-
-const textColors = ['#1f2329', '#d93025', '#1a73e8', '#188038', '#b06000'];
-
-const fillColors = [
-  { label: '无填充', value: null },
-  { label: '浅黄', value: '#fff2cc' },
-  { label: '浅绿', value: '#d9ead3' },
-  { label: '浅蓝', value: '#dbe9f6' },
-  { label: '浅粉', value: '#fce4ec' },
-];
-
-const formatOptions = [
-  { label: '常规', value: 'general' },
-  { label: '数值', value: 'number' },
-  { label: '百分比', value: 'percent' },
-  { label: '日期', value: 'date' },
-];
+const canUndo = ref(false);
+const canRedo = ref(false);
+const formulaValue = ref('');
+const formulaEditing = ref(false);
 
 const themeOverrides = {
   common: {
@@ -166,52 +63,126 @@ const themeOverrides = {
   },
 };
 
+const formulaPlaceholder = computed(() => {
+  const info = activeInfo.value;
+  if (!info) {
+    return '';
+  }
+  const rows = info.range.endRow - info.range.startRow;
+  const columns = info.range.endCol - info.range.startCol;
+  if (info.mode === 'all') {
+    return '已选择全表';
+  }
+  if (info.mode === 'rows') {
+    return `已选择 ${rows} 行`;
+  }
+  if (info.mode === 'columns') {
+    return `已选择 ${columns} 列`;
+  }
+  return `已选择 ${rows} 行 × ${columns} 列`;
+});
+
+function handleActiveChange(info) {
+  activeInfo.value = info;
+  if (!formulaEditing.value) {
+    formulaValue.value = info.rawInput ?? '';
+  }
+}
+
 function handleStyleChange(style) {
   activeStyle.value = style;
 }
 
-function toggleBold() {
-  gridRef.value?.applyStyle({ bold: !activeStyle.value.bold });
+function handleHistoryChange(state) {
+  canUndo.value = state.canUndo;
+  canRedo.value = state.canRedo;
 }
 
-function toggleItalic() {
-  gridRef.value?.applyStyle({ italic: !activeStyle.value.italic });
+function handleFormulaFocus() {
+  gridRef.value?.commitActiveEdit?.();
+  formulaEditing.value = true;
+  formulaValue.value = activeInfo.value?.rawInput ?? '';
 }
 
-function setAlign(align) {
-  gridRef.value?.applyStyle({ align });
+function handleFormulaInput(value) {
+  formulaValue.value = value;
 }
 
-function applyFormat(numberFormat) {
-  gridRef.value?.applyNumberFormat(numberFormat);
+function commitFormula(move) {
+  if (!formulaEditing.value) {
+    return true;
+  }
+  const info = activeInfo.value;
+  if (!info?.editable) {
+    formulaEditing.value = false;
+    return false;
+  }
+  formulaEditing.value = false;
+  gridRef.value?.applyInput(formulaValue.value);
+  if (move === 'down') {
+    gridRef.value?.moveActive(1, 0);
+  } else if (move === 'right') {
+    gridRef.value?.moveActive(0, 1);
+  } else if (move === 'left') {
+    gridRef.value?.moveActive(0, -1);
+  }
+  gridRef.value?.focusGrid?.();
+  return true;
 }
 
-function applyTextColor(textColor) {
-  gridRef.value?.applyStyle({ textColor });
+function handleFormulaCommit({ value, move }) {
+  formulaValue.value = value;
+  commitFormula(move);
 }
 
-function applyFillColor(backgroundColor) {
-  gridRef.value?.applyStyle({ backgroundColor });
+function handleFormulaCancel() {
+  formulaEditing.value = false;
+  formulaValue.value = activeInfo.value?.rawInput ?? '';
+  gridRef.value?.focusGrid?.();
 }
 
-function applyBorder(mode) {
-  gridRef.value?.applyBorder(mode);
+function commitAllEdits() {
+  if (formulaEditing.value) {
+    commitFormula(null);
+  }
+  gridRef.value?.commitActiveEdit?.();
 }
 
-function hideRows() {
-  gridRef.value?.hideSelectedRows();
-}
-
-function hideCols() {
-  gridRef.value?.hideSelectedColumns();
-}
-
-function showRows() {
-  gridRef.value?.showSelectedRows();
-}
-
-function showCols() {
-  gridRef.value?.showSelectedColumns();
+function handleToolbarAction({ type, payload }) {
+  commitAllEdits();
+  switch (type) {
+    case 'undo':
+      gridRef.value?.undo?.();
+      break;
+    case 'redo':
+      gridRef.value?.redo?.();
+      break;
+    case 'style':
+      gridRef.value?.applyStyle?.(payload);
+      break;
+    case 'border':
+      gridRef.value?.applyBorder?.(payload);
+      break;
+    case 'number-format':
+      gridRef.value?.applyNumberFormat?.(payload);
+      break;
+    case 'hide':
+      if (payload === 'rows') {
+        gridRef.value?.hideSelectedRows?.();
+      } else {
+        gridRef.value?.hideSelectedColumns?.();
+      }
+      break;
+    case 'show':
+      if (payload === 'rows') {
+        gridRef.value?.showSelectedRows?.();
+      } else {
+        gridRef.value?.showSelectedColumns?.();
+      }
+      break;
+    default:
+      break;
+  }
 }
 </script>
 
@@ -221,74 +192,6 @@ function showCols() {
   height: 100vh;
   flex-direction: column;
   overflow: hidden;
-}
-
-.editor-header {
-  display: flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 16px;
-  border-bottom: 1px solid #e5e7eb;
-  background-color: #ffffff;
-}
-
-.brand {
-  font-size: 18px;
-  font-weight: 600;
-  letter-spacing: 0.2px;
-}
-
-.hint {
-  margin-left: auto;
-  color: #6b7280;
-  font-size: 12px;
-}
-
-.address {
-  padding: 2px 10px;
-  border: 1px solid #dbe3ef;
-  border-radius: 4px;
-  background-color: #f7f9fc;
-  color: #1d4ed8;
-  font-family: 'Consolas', 'Menlo', monospace;
-  font-size: 12px;
-  line-height: 18px;
-}
-
-.editor-toolbar {
-  display: flex;
-  flex: 0 0 auto;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 16px;
-  border-bottom: 1px solid #e5e7eb;
-  background-color: #ffffff;
-}
-
-.format-select {
-  width: 104px;
-}
-
-.toolbar-label {
-  color: #6b7280;
-  font-size: 12px;
-}
-
-.swatch {
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  border: 1px solid #cbd5e1;
-  border-radius: 4px;
-  cursor: pointer;
-  line-height: 18px;
-}
-
-.swatch-none {
-  color: #6b7280;
-  font-size: 12px;
 }
 
 .editor-content {

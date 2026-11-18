@@ -40,6 +40,7 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { columnIndexToLabel, toA1 } from '@/spreadsheet/core/coordinates.js';
+import { formatCellText } from '@/spreadsheet/core/format.js';
 import {
   createAllSelection,
   createColumnSelection,
@@ -79,7 +80,7 @@ const props = defineProps({
   columnCount: { type: Number, default: 16384 },
 });
 
-const emit = defineEmits(['active-change', 'active-style-change']);
+const emit = defineEmits(['active-change', 'active-style-change', 'history-change']);
 
 const layout = createGridLayout({
   rowCount: props.rowCount,
@@ -110,6 +111,8 @@ const commands = createCommandManager({
   onApplied: () => {
     scheduleDraw();
     emitActiveStyle();
+    emitActiveInfo();
+    emitHistory();
   },
 });
 const renderer = createGridRenderer();
@@ -141,13 +144,54 @@ function selectionLabel() {
   if (current.mode === 'all') {
     return '全部';
   }
-  return toA1(activeCell.value.row, activeCell.value.col);
+  const range = selectionRange(current, layout);
+  if (range.startRow === range.endRow && range.startCol === range.endCol) {
+    return toA1(range.startRow, range.startCol);
+  }
+  return `${toA1(range.startRow, range.startCol)}:${toA1(range.endRow, range.endCol)}`;
+}
+
+function buildActiveInfo() {
+  const current = selection.value;
+  const range = selectionRange(current, layout);
+  const single =
+    current.mode === 'cells' &&
+    current.anchor.row === current.focus.row &&
+    current.anchor.col === current.focus.col;
+  const cell = single ? cellStore.get(activeCell.value.row, activeCell.value.col) : undefined;
+  const style = single ? styleStore.resolve(activeCell.value.row, activeCell.value.col) : null;
+
+  return {
+    address: selectionLabel(),
+    mode: current.mode,
+    selectionKind: single ? 'single-cell' : current.mode === 'cells' ? 'range' : current.mode,
+    // 对外范围使用半开区间，endRow/endCol 不包含终点。
+    range: {
+      startRow: range.startRow,
+      endRow: range.endRow + 1,
+      startCol: range.startCol,
+      endCol: range.endCol + 1,
+    },
+    activeCell: { ...activeCell.value },
+    rawInput: single ? (cell?.rawInput ?? '') : null,
+    displayText: single ? formatCellText(cell, style) : null,
+    valueType: single ? (cell?.valueType ?? null) : null,
+    editable: single,
+  };
+}
+
+function emitActiveInfo() {
+  emit('active-change', buildActiveInfo());
+}
+
+function emitHistory() {
+  emit('history-change', { canUndo: commands.canUndo, canRedo: commands.canRedo });
 }
 
 watch(
   selection,
   () => {
-    emit('active-change', selectionLabel());
+    emitActiveInfo();
     emitActiveStyle();
   },
   { immediate: true },
@@ -945,10 +989,51 @@ function applyNumberFormat(numberFormat) {
   applyStyle({ numberFormat });
 }
 
+function commitActiveEdit() {
+  if (!editing.value) {
+    return true;
+  }
+  commitEdit();
+  return true;
+}
+
+function applyInput(text) {
+  if (editing.value) {
+    commitEdit();
+  }
+  const current = selection.value;
+  const single =
+    current.mode === 'cells' &&
+    current.anchor.row === current.focus.row &&
+    current.anchor.col === current.focus.col;
+  if (!single) {
+    return;
+  }
+  const input = typeof text === 'string' ? text : '';
+  commands.execute(
+    createSetCellCommand({
+      row: activeCell.value.row,
+      col: activeCell.value.col,
+      input,
+    }),
+    commandContext,
+  );
+}
+
+function focusGrid() {
+  focusScroller();
+}
+
 defineExpose({
   applyStyle,
   applyBorder,
   applyNumberFormat,
+  applyInput,
+  commitActiveEdit,
+  moveActive,
+  focusGrid,
+  undo,
+  redo,
   hideSelectedRows,
   hideSelectedColumns,
   showSelectedRows,
@@ -1063,6 +1148,8 @@ onMounted(() => {
     resizeObserver.observe(scrollerRef.value);
   }
   handleResize();
+  emitActiveInfo();
+  emitHistory();
 });
 
 onBeforeUnmount(() => {
