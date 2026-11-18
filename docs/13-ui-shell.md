@@ -4,6 +4,13 @@
 >
 > 关联文档：[03 前端工程设计](03-frontend.md)、[07 命令、剪贴板、撤销重做与公式](07-editing-formula.md)、[10 分阶段实施计划](10-roadmap.md)、[12 架构决策记录](12-decisions.md)。
 
+## 0. 已确认决策（2026-11-18）
+
+1. **品牌**：保留 `sheetlite-animated-logo.svg` 与 `sheetlite-high-resolution-logo.svg` 原样；另生成 `sheetlite-logo-mark.svg`，只保留图案、不含 “SHEETLITE” 字标，用于页头/favicon。
+2. **编辑栏**：确认采用**失焦提交**，与内联编辑器保持一致，避免切换焦点时丢失输入。
+3. **合并单元格**：按 UI-4 独立阶段推进，先完成 `MergeStore`、合并命令与几何，再启用工具栏按钮。
+4. **筛选/排序**：放到后续数据处理阶段，依赖持久化与“数据区域”语义，不在 UI-1 内启用。
+
 ## 1. 现状与差距
 
 ### 1.1 当前布局
@@ -161,7 +168,7 @@ focusGrid()           // 提交后把焦点还给网格
 
 - **单格**：显示 `rawInput`；进入编辑栏时，若网格内联编辑器未关闭，先提交内联编辑，保证同一时刻只有一个输入源。
 - **多选/整行/整列/全表**：内容框禁用，显示占位提示（如“已选择 3 行 × 2 列”）；名称框显示范围。
-- **提交**：`Enter` 提交并下移；`Tab` 提交并右移；`Esc` 恢复原值；失焦提交（与内联编辑器一致，避免丢数据）。
+- **提交**：`Enter` 提交并下移；`Tab` 提交并右移；`Esc` 恢复原值；**失焦提交（已确认）**，与内联编辑器一致，避免切换焦点时丢数据。
 - **输入法**：组合期间不响应 `Enter`/`Esc`；与现有编辑器共用 composition 守卫。
 - **撤销**：编辑栏提交同样进入 `SET_CELL` 命令，`Ctrl+Z` 可撤销，可被工具栏撤销按钮触发。
 - **公式**：阶段 6 前内容框不解析 `=`，按普通文本保存；`fx` 与公式按钮禁用。
@@ -173,20 +180,23 @@ focusGrid()           // 提交后把焦点还给网格
 
 | 文件 | 用途 | 说明 |
 |---|---|---|
-| `frontend/public/sheetlite-high-resolution-logo.svg` | 静态品牌图 / favicon | 2000×2000 viewBox，内容区 1500×1500，配色 `#358051` / `#073106` |
-| `frontend/public/sheetlite-animated-logo.svg` | 头部动画 logo | 同一图形，内嵌 CSS keyframes（`lm-fly` / `lm-pop` / `lm-rise` / `lm-fade`），自带 `prefers-reduced-motion` 降级 |
+| `frontend/public/sheetlite-high-resolution-logo.svg` | 原始静态品牌图 / 启动页 / About | 2000×2000 viewBox，内容区 1500×1500，配色 `#358051` / `#073106`；保持原样不修改 |
+| `frontend/public/sheetlite-animated-logo.svg` | 原始动画品牌图 | 同一图形，内嵌 CSS keyframes（`lm-fly` / `lm-pop` / `lm-rise` / `lm-fade`），自带 `prefers-reduced-motion` 降级；保持原样不修改 |
+| `frontend/public/sheetlite-logo-mark.svg` | 页头品牌标记 / favicon | **新增**：从静态 logo 裁剪，只保留“S + 表格”图案，移除 “SHEETLITE” 字标 |
 
-- 两个文件由用户提供，目前未被 Git 跟踪；实施 UI-1 时一并提交。
-- SVG 无外部依赖，`<img>` 直接引用即可播放 CSS 动画，不需要额外 JS。
+- 原有两个 SVG 由用户提供且不修改；`sheetlite-logo-mark.svg` 为派生资源，实施 UI-1 时生成并提交。
+- 裁剪方式：以静态 SVG 的内容区为源，保留图案分组，删除字标路径，把 `viewBox` 收紧到图案包围盒（大致 `x=250..1250`、`y=250..1250`，实施时用可视化确认，避免留下大片透明边）。
+- 三个文件均由 Vite 从 `public/` 直接提供，无外部依赖；动画由 SVG 内嵌 CSS 播放，不需要额外 JS。
 
 ### 5.2 接入方式
 
-- **AppHeader**：`<img src="/sheetlite-animated-logo.svg" width="48" height="48" alt="Sheet Lite">`，固定宽高避免 CLS；动画在页面加载时播放一次。
-- **重播**：悬停/点击品牌区时通过改变 `key` 重新挂载 `<img>`（或临时切到静态图再切回），不修改 SVG 内容。
-- **静态兜底**：当动画资源加载失败或用户偏好减少动态效果时使用 `sheetlite-high-resolution-logo.svg`；SVG 内部的媒体查询只处理动画，页面侧再用 `matchMedia('(prefers-reduced-motion: reduce)')` 选择静态图。
-- **Favicon**：`index.html` 增加 `<link rel="icon" type="image/svg+xml" href="/sheetlite-high-resolution-logo.svg">`。
-- **清晰度**：方形构图约 1500×1500 内容区，48px 高度在 2× 屏仍有余量；不要用 `<img>` 拉伸到非等比尺寸。
-- **可读性**：logo 自带 “SHEETLITE” 字标，48px 下字标较小；若评审认为不可读，再从同一 SVG 裁出 icon-only 版本（仅 “S” 图形）用于头部，字标只在启动页/关于页使用。此项列为开放问题。
+- **AppHeader**：左侧 `sheetlite-logo-mark.svg`（32–36px 方形）+ 文本 “Sheet Lite”。图案在 32px 下仍清晰，字标不再挤压进小尺寸。
+- **启动动画**：首次加载时显示一次覆盖层（居中 180–220px 的原动画 logo，约 1.2s 后淡出），让 “SHEETLITE” 字标可读；同一会话内用 `sessionStorage` 去重，刷新不再重复。
+- **减少动态效果**：`prefers-reduced-motion: reduce` 时跳过启动动画，直接显示页头 mark；SVG 内部已有动画降级，页面侧再做一次判断。
+- **降级**：动画资源加载失败时回退到 `sheetlite-high-resolution-logo.svg` 的静态展示，不影响进入应用。
+- **Favicon**：`index.html` 使用 `sheetlite-logo-mark.svg`（小尺寸下更清晰）；原始高分辨率 logo 用于 About/分享图等场景。
+- **清晰度**：固定宽高（`width`/`height` 属性 + CSS）避免 CLS；2× 屏下 mark 使用矢量渲染。
+- **可访问性**：`alt="Sheet Lite"`；启动覆盖层不抢焦点，淡出后移除；动画不循环。
 
 ## 6. 实施阶段
 
@@ -195,7 +205,7 @@ focusGrid()           // 提交后把焦点还给网格
 - 新增 `components/AppHeader.vue`、`components/FormatToolbar.vue`、`components/FormulaBar.vue`，`EditorPage` 只负责组合与状态编排。
 - 按 3.1 的 7 组顺序重排工具栏；已有能力（撤销/恢复、加粗/斜体、对齐、颜色、边框、数字格式）接入。
 - 地址移入编辑栏；实现 `active-change` 对象与 `applyInput`。
-- 接入 logo、动画、favicon；行/列隐藏入口迁到表头右键菜单或“更多”。
+- 新增 icon-only `sheetlite-logo-mark.svg` 并接入页头（mark + “Sheet Lite” 文本）；原始动画 logo 用于首次启动 splash（`sessionStorage` 去重、reduced-motion 跳过），favicon 使用 mark；行/列隐藏入口迁到表头右键菜单或“更多”。
 - 产出：布局与顺序符合规格，编辑栏可读写单格，按钮状态随选区更新。
 
 ### UI-2：样式模型扩展
@@ -228,7 +238,7 @@ focusGrid()           // 提交后把焦点还给网格
 
 - 单测：样式扩展字段的规范化/合并；小数位格式化；编辑栏状态推导（单格/多选/整行/整列/全表）；格式刷状态机。
 - 组件/集成：工具栏分组顺序、按钮启用/混合态；`active-change` 负载；编辑栏提交调用 `SET_CELL`。
-- Edge/CDP（按项目约定）：DOM 顺序与分组；地址位于编辑栏左侧；编辑栏输入 → 单元格更新 → 撤销恢复；logo 元素加载、动画资源可播放。
+- Edge/CDP（按项目约定）：DOM 顺序与分组；地址位于编辑栏左侧；编辑栏输入 → 单元格更新 → 撤销恢复；页头 mark 加载、启动动画可播放且 reduced-motion 下跳过。
 
 ### 人工
 
@@ -239,14 +249,13 @@ focusGrid()           // 提交后把焦点还给网格
 
 ## 8. 风险与开放问题
 
-1. **合并单元格**语义复杂（锚点、重叠、行列插入删除、复制粘贴、撤销），不在 UI-1/2 内完成，需单独立项。
-2. **筛选/排序**需要先定义“数据区域”和排序后的持久化语义，否则容易变成一次性 UI。
+1. **合并单元格**：已确认按 UI-4 独立阶段推进；锚点、重叠、行列插入删除、复制粘贴与撤销仍需在 UI-4 设计评审时定稿。
+2. **筛选/排序**：已确认放到后续数据处理阶段；需要先定义“数据区域”和排序后的持久化语义，否则容易变成一次性 UI。
 3. **字体可用性**：只使用系统字体（微软雅黑、宋体、Arial、Calibri 等），不引入 Web Font；跨平台渲染差异需在验收中记录。
 4. **换行与行高**：首期在固定行高内裁剪；自动行高会牵动尺寸索引与滚动，需单独评估。
 5. **旋转文本**不改命中矩形，编辑框保持水平；需要在验收中确认不产生错位。
-6. **Logo 字标可读性**：48px 下 “SHEETLITE” 字标偏小，可能需要 icon-only 裁剪版；请评审确认。
-7. **工具栏窄屏策略**：折叠阈值与“更多”菜单内容需要在实现时用真实宽度测试。
-8. **图标命名**：`@vicons/material` 使用 `*Outlined` 后缀；实现时以实际导出为准，避免整包引入。
+6. **工具栏窄屏策略**：折叠阈值与“更多”菜单内容需要在实现时用真实宽度测试。
+7. **图标命名**：`@vicons/material` 使用 `*Outlined` 后缀；实现时以实际导出为准，避免整包引入。
 
 ## 9. 预计改动文件（实施时）
 
@@ -261,5 +270,6 @@ frontend/src/spreadsheet/core/format.js        # decimals
 frontend/src/spreadsheet/rendering/gridRenderer.js
 frontend/src/spreadsheet/commands/*            # 格式刷/合并（后续阶段）
 frontend/src/__tests__/*                       # 纯函数测试
-frontend/index.html                            # favicon
+frontend/index.html                            # favicon（mark）
+frontend/public/sheetlite-logo-mark.svg        # 新增：从静态 logo 裁剪，仅图案、无字标
 ```

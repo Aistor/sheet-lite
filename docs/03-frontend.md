@@ -201,7 +201,7 @@ export function createSpreadsheetEngine(options) {
 - 应用外壳组件（`components/AppHeader.vue`、`FormatToolbar.vue`、`FormulaBar.vue`）由 `EditorPage` 组合，只负责展示与意图收集；不得直接访问 `SparseCellStore`、`SparseStyleStore` 或命令管理器。
 - 外壳通过 `SpreadsheetGrid` 暴露的事件与方法与内核交互：活动单元格信息（地址、选区模式、`rawInput`、可编辑性）、`applyInput`、`undo/redo`、`history-change`。所有写入仍走命令层。
 - 单元格地址统一显示在编辑栏左侧的名称框；编辑栏显示原始输入，格式化展示由渲染层负责。
-- 图标统一使用 `@vicons/material` 的具名导入（按需打包）；品牌资源放在 `public/`，动画遵循 `prefers-reduced-motion`。
+- 图标统一使用 `@vicons/material` 的具名导入（按需打包）；页头使用 icon-only mark，原动画 logo 用于首次启动动画，品牌资源放 `public/` 并遵循 `prefers-reduced-motion`。
 - 工具栏分组、编辑栏行为与分阶段落地的详细规格见 [13 应用外壳](13-ui-shell.md)。
 
 ## 3. 核心模型示例

@@ -20,7 +20,7 @@
 | 前端包管理 | Yarn Classic 1.22.22，提交 `yarn.lock`，使用冻结锁文件安装 | ADR-008 |
 | 开发环境 | 不采用 Docker / Docker Compose | ADR-009 |
 | 数据库管理 | 个人开发阶段由 AI 助手管理本地数据库；不使用迁移框架、版本登记表或迁移执行器 | ADR-010 |
-| 应用外壳 | 工具栏/编辑栏通过网格显式 API 交互；地址移入编辑栏；图标 `@vicons` 按需引入；logo 动画遵循 reduced-motion | ADR-012 |
+| 应用外壳 | 工具栏/编辑栏通过网格显式 API 交互；地址移入编辑栏；图标 `@vicons` 按需引入；页头使用 icon-only mark，原动画 logo 用于启动动画 | ADR-012 |
 
 ---
 
@@ -122,7 +122,7 @@
   - `SpreadsheetGrid` 通过 `active-change` 事件暴露活动单元格对象（地址、选区模式、`rawInput`、可编辑性），并提供 `applyInput`、`undo/redo` 与 `history-change` 供外壳调用。
   - 地址唯一展示位是编辑栏左侧名称框；编辑栏显示 `rawInput`，格式化展示由渲染层负责；提交走 `SET_CELL` 命令。
   - 图标统一使用 `@vicons/material` 的具名导入（Outlined），禁止整包引入。
-  - 品牌资源放在 `frontend/public/`：静态图用于 favicon/降级，动画 SVG 在头部播放一次并遵循 `prefers-reduced-motion`。
+  - 品牌资源保留原始静态/动画 logo；新增 `sheetlite-logo-mark.svg`（仅图案、无字标）用于页头与 favicon；原动画 logo 用于首次启动 splash，遵循 `prefers-reduced-motion`。
 - 原因：保持 `core` 不依赖 Vue/DOM；外壳可独立测试；避免出现“顶栏地址”与“网格活动单元格”两份状态；控制包体与动画可访问性。
 - 代价：`SpreadsheetGrid` 的公开面扩大，需要维护事件负载兼容；编辑栏与内联编辑需要约定互斥的提交顺序。
 - 复审条件：引入多工作表标签、多行公式编辑器、协同编辑或移动端布局时，重新评估外壳与内核的边界。
