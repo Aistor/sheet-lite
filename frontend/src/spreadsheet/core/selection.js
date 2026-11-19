@@ -8,6 +8,8 @@
  * - all：整表
  */
 
+import { columnLabelToIndex, parseA1 } from './coordinates.js';
+
 /**
  * 把单元格坐标限制在表格边界内。
  *
@@ -190,4 +192,128 @@ export function isSingleCellSelection(selection) {
     selection.anchor.row === selection.focus.row &&
     selection.anchor.col === selection.focus.col
   );
+}
+
+function parseCellToken(token) {
+  try {
+    return parseA1(token);
+  } catch {
+    return null;
+  }
+}
+
+function parseColumnToken(token) {
+  if (!/^[A-Z]{1,3}$/.test(token)) {
+    return null;
+  }
+  try {
+    return columnLabelToIndex(token);
+  } catch {
+    return null;
+  }
+}
+
+function parseRowToken(token) {
+  if (!/^[1-9]\d*$/.test(token)) {
+    return null;
+  }
+  const row = Number(token) - 1;
+  return Number.isSafeInteger(row) ? row : null;
+}
+
+function cellFits(cell, bounds) {
+  return cell.row >= 0 && cell.row < bounds.rowCount && cell.col >= 0 && cell.col < bounds.columnCount;
+}
+
+/**
+ * 解析名称框输入为选区。
+ *
+ * 支持 `A1`、`A1:C10`、`A:C`、`1:10`、`A`、`1` 与 `全部`/`ALL`；
+ * 非法或越界输入返回 null。范围会自动规范化方向。
+ *
+ * @param {string} input 名称框输入
+ * @param {{ rowCount: number, columnCount: number }} bounds 行列上限
+ * @returns {object | null} 选区
+ */
+export function parseSelectionReference(input, bounds) {
+  if (typeof input !== 'string' || !bounds) {
+    return null;
+  }
+  const raw = input.trim().toUpperCase().replace(/\s+/g, '');
+  if (!raw) {
+    return null;
+  }
+  if (raw === '全部' || raw === 'ALL') {
+    return { mode: 'all' };
+  }
+
+  const parts = raw.split(':');
+  if (parts.length > 2) {
+    return null;
+  }
+
+  if (parts.length === 1) {
+    const cell = parseCellToken(parts[0]);
+    if (cell) {
+      return cellFits(cell, bounds) ? { mode: 'cells', anchor: cell, focus: { ...cell } } : null;
+    }
+    const col = parseColumnToken(parts[0]);
+    if (col !== null) {
+      return col < bounds.columnCount ? { mode: 'columns', anchorCol: col, focusCol: col } : null;
+    }
+    const row = parseRowToken(parts[0]);
+    if (row !== null) {
+      return row < bounds.rowCount ? { mode: 'rows', anchorRow: row, focusRow: row } : null;
+    }
+    return null;
+  }
+
+  const [startToken, endToken] = parts;
+
+  const startCell = parseCellToken(startToken);
+  const endCell = parseCellToken(endToken);
+  if (startCell && endCell) {
+    if (!cellFits(startCell, bounds) || !cellFits(endCell, bounds)) {
+      return null;
+    }
+    return {
+      mode: 'cells',
+      anchor: {
+        row: Math.min(startCell.row, endCell.row),
+        col: Math.min(startCell.col, endCell.col),
+      },
+      focus: {
+        row: Math.max(startCell.row, endCell.row),
+        col: Math.max(startCell.col, endCell.col),
+      },
+    };
+  }
+
+  const startCol = parseColumnToken(startToken);
+  const endCol = parseColumnToken(endToken);
+  if (startCol !== null && endCol !== null) {
+    if (startCol >= bounds.columnCount || endCol >= bounds.columnCount) {
+      return null;
+    }
+    return {
+      mode: 'columns',
+      anchorCol: Math.min(startCol, endCol),
+      focusCol: Math.max(startCol, endCol),
+    };
+  }
+
+  const startRow = parseRowToken(startToken);
+  const endRow = parseRowToken(endToken);
+  if (startRow !== null && endRow !== null) {
+    if (startRow >= bounds.rowCount || endRow >= bounds.rowCount) {
+      return null;
+    }
+    return {
+      mode: 'rows',
+      anchorRow: Math.min(startRow, endRow),
+      focusRow: Math.max(startRow, endRow),
+    };
+  }
+
+  return null;
 }

@@ -15,10 +15,13 @@
         :value="formulaValue"
         :editable="activeInfo?.editable ?? false"
         :placeholder="formulaPlaceholder"
+        :invalid="nameBoxInvalid"
         @focus="handleFormulaFocus"
         @input="handleFormulaInput"
         @commit="handleFormulaCommit"
         @cancel="handleFormulaCancel"
+        @jump="handleJump"
+        @name-input="nameBoxInvalid = false"
       />
 
       <main class="editor-content">
@@ -55,17 +58,35 @@ const canUndo = ref(false);
 const canRedo = ref(false);
 const formulaValue = ref('');
 const formulaEditing = ref(false);
+const nameBoxInvalid = ref(false);
 
 const themeOverrides = {
   common: {
-    primaryColor: '#2563eb',
-    primaryColorHover: '#1d4ed8',
+    primaryColor: '#358051',
+    primaryColorHover: '#2f7448',
+    primaryColorPressed: '#245a3a',
+    primaryColorSuppl: '#358051',
+    textColorBase: '#073106',
+    bodyColor: '#ffffff',
+    cardColor: '#ffffff',
+    borderRadius: '10px',
+    fontFamily:
+      "'Inter', 'PingFang SC', 'Microsoft YaHei', system-ui, -apple-system, sans-serif",
+  },
+  Button: {
+    borderRadiusMedium: '8px',
+  },
+  Tag: {
+    borderRadius: '999px',
   },
 };
 
 const formulaPlaceholder = computed(() => {
   const info = activeInfo.value;
   if (!info) {
+    return '';
+  }
+  if (info.selectionKind === 'single-cell') {
     return '';
   }
   const rows = info.range.endRow - info.range.startRow;
@@ -84,6 +105,7 @@ const formulaPlaceholder = computed(() => {
 
 function handleActiveChange(info) {
   activeInfo.value = info;
+  nameBoxInvalid.value = false;
   if (!formulaEditing.value) {
     formulaValue.value = info.rawInput ?? '';
   }
@@ -141,6 +163,14 @@ function handleFormulaCancel() {
   gridRef.value?.focusGrid?.();
 }
 
+function handleJump(value) {
+  const ok = gridRef.value?.selectAddress?.(value) ?? false;
+  nameBoxInvalid.value = !ok;
+  if (ok) {
+    gridRef.value?.focusGrid?.();
+  }
+}
+
 function commitAllEdits() {
   if (formulaEditing.value) {
     commitFormula(null);
@@ -192,13 +222,14 @@ function handleToolbarAction({ type, payload }) {
   height: 100vh;
   flex-direction: column;
   overflow: hidden;
+  background-color: transparent;
 }
 
 .editor-content {
   display: flex;
   flex: 1 1 auto;
   min-height: 0;
-  padding: 12px;
-  background-color: #f5f6f8;
+  padding: 12px 16px 16px;
+  background-color: transparent;
 }
 </style>

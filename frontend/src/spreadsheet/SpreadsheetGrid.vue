@@ -50,6 +50,7 @@ import {
   extendRowSelection,
   extendSelection,
   moveActiveCell,
+  parseSelectionReference,
   selectionActiveCell,
   selectionRange,
 } from '@/spreadsheet/core/selection.js';
@@ -818,6 +819,20 @@ function moveActive(deltaRow, deltaCol, extend = false) {
   scheduleDraw();
 }
 
+function selectAddress(input) {
+  const next = parseSelectionReference(input, {
+    rowCount: layout.rowCount,
+    columnCount: layout.columnCount,
+  });
+  if (!next) {
+    return false;
+  }
+  selection.value = next;
+  ensureVisible(selectionActiveCell(next));
+  scheduleDraw();
+  return true;
+}
+
 function copySelection() {
   const range = selectionRange(selection.value, layout);
   const rows = range.endRow - range.startRow + 1;
@@ -1031,6 +1046,7 @@ defineExpose({
   applyInput,
   commitActiveEdit,
   moveActive,
+  selectAddress,
   focusGrid,
   undo,
   redo,
@@ -1174,9 +1190,10 @@ onBeforeUnmount(() => {
   flex: 1 1 auto;
   min-height: 0;
   overflow: hidden;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
+  border: 1px solid var(--sl-border, #dfeee2);
+  border-radius: 12px;
   background-color: #ffffff;
+  box-shadow: 0 8px 24px rgba(7, 49, 6, 0.07);
 }
 
 .grid-canvas {
@@ -1184,8 +1201,8 @@ onBeforeUnmount(() => {
   inset: 0;
   width: 100%;
   height: 100%;
-  border-radius: 8px;
-  clip-path: inset(0 round 8px);
+  border-radius: 12px;
+  clip-path: inset(0 round 12px);
   pointer-events: none;
 }
 
@@ -1193,12 +1210,12 @@ onBeforeUnmount(() => {
   position: absolute;
   inset: 0;
   overflow: auto;
-  border-radius: 8px;
+  border-radius: 12px;
   outline: none;
 }
 
 .grid-scroller:focus-visible {
-  box-shadow: inset 0 0 0 2px rgba(37, 99, 235, 0.35);
+  box-shadow: inset 0 0 0 2px rgba(53, 128, 81, 0.3);
 }
 
 .grid-spacer {
@@ -1211,7 +1228,7 @@ onBeforeUnmount(() => {
   box-sizing: border-box;
   margin: 0;
   padding: 0 5px;
-  border: 2px solid #2563eb;
+  border: 2px solid #358051;
   outline: none;
   background-color: #ffffff;
   color: #1f2329;
