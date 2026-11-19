@@ -20,7 +20,7 @@
 | 前端包管理 | Yarn Classic 1.22.22，提交 `yarn.lock`，使用冻结锁文件安装 | ADR-008 |
 | 开发环境 | 不采用 Docker / Docker Compose | ADR-009 |
 | 数据库管理 | 个人开发阶段由 AI 助手管理本地数据库；不使用迁移框架、版本登记表或迁移执行器 | ADR-010 |
-| 应用外壳 | 工具栏/编辑栏通过网格显式 API 交互；地址移入编辑栏；图标 `@vicons` 按需引入；页头使用 icon-only mark；启动动画非阻塞 | ADR-012 |
+| 应用外壳 | 工具栏/编辑栏通过网格显式 API 交互；地址移入编辑栏；图标 `@vicons` 按需引入；页头使用 icon-only mark；启动动画完整播放+200ms 后进入 | ADR-012 |
 | 写操作幂等 | 同一事务内先鉴权、再查 `operationId` 并比对请求内容，最后校验 `baseRevision` | ADR-013 |
 | 工作簿所有权 | `sl_workbook.owner_id` 是唯一所有权来源；成员表只存 EDITOR/VIEWER | ADR-014 |
 
