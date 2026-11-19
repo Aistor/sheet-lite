@@ -1,5 +1,16 @@
 :root {
   color-scheme: light;
+  --sl-primary: #358051;
+  --sl-primary-hover: #2f7448;
+  --sl-primary-pressed: #245a3a;
+  --sl-ink: #073106;
+  --sl-bg: #f5fcf6;
+  --sl-surface: #ffffff;
+  --sl-border: #dfeee2;
+  --sl-border-strong: #cfe6d5;
+  --sl-muted: #5f7a66;
+  --sl-soft: #eaf6ec;
+
   font-family:
     'Inter',
     'PingFang SC',
@@ -17,6 +28,12 @@ body,
 }
 
 body {
-  background-color: #f5f6f8;
-  color: #1f2329;
+  background-color: #ffffff;
+  color: var(--sl-ink);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background-color: rgba(53, 128, 81, 0.22);
 }

@@ -379,4 +379,70 @@ function toggle(key) {
   gap: 6px;
   align-items: flex-start;
 }
+
+/* 现代外壳样式：绿色品牌、卡片化工具栏、轻量悬停 */
+.format-toolbar {
+  margin: 12px 16px 0;
+  padding: 6px 10px;
+  border: 1px solid var(--sl-border, #dfeee2);
+  border-bottom: 1px solid var(--sl-border, #dfeee2);
+  border-radius: 12px;
+  background-color: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 4px 14px rgba(7, 49, 6, 0.05);
+}
+
+.format-toolbar :deep(.n-divider--vertical) {
+  height: 20px;
+  margin: 0 4px;
+  background-color: #e3f0e6;
+}
+
+.toolbar-group {
+  gap: 2px;
+}
+
+.format-toolbar :deep(.n-button:not(.n-button--primary-type)) {
+  --n-color: transparent;
+  --n-color-hover: #f0f9f2;
+  --n-color-pressed: #e3f3e7;
+  --n-border: 1px solid transparent;
+  --n-border-hover: 1px solid transparent;
+  --n-border-pressed: 1px solid transparent;
+  --n-text-color: #365c43;
+  --n-text-color-hover: #073106;
+  --n-text-color-pressed: #073106;
+  --n-text-color-disabled: #a9bdae;
+  --n-color-disabled: transparent;
+  border-radius: 8px;
+}
+
+/* 隐藏 Naive Button 的描边层，让按钮与工具栏融为一体。 */
+.format-toolbar :deep(.n-button__border),
+.format-toolbar :deep(.n-button__state-border) {
+  display: none !important;
+}
+
+.format-toolbar :deep(.n-base-selection) {
+  --n-border: 1px solid transparent;
+  --n-border-hover: 1px solid #cfe6d5;
+  --n-border-active: 1px solid #358051;
+  --n-border-focus: 1px solid #358051;
+  --n-box-shadow-focus: 0 0 0 2px rgba(53, 128, 81, 0.14);
+  border-radius: 8px;
+  background-color: #f7fbf8;
+}
+
+.format-toolbar :deep(.n-base-selection-label) {
+  color: #073106;
+}
+
+.format-toolbar :deep(.n-button--primary-type) {
+  --n-color: #358051;
+  --n-color-hover: #2f7448;
+  --n-color-pressed: #245a3a;
+  --n-text-color: #ffffff;
+  --n-text-color-hover: #ffffff;
+  --n-text-color-pressed: #ffffff;
+  border-radius: 8px;
+}
 </style>
